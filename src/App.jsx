@@ -2421,12 +2421,40 @@ function AdminLayout({ role }) {
                     <div className="settings-section">
                       <h3>Rate Limits</h3>
                       <p>Set per-key limits, concurrency thresholds, and usage caps.</p>
-                      <div className="settings-placeholder">Rate limit configuration coming soon.</div>
+                      <div className="settings-form">
+                        <label className="field">
+                          <span>Requests per minute</span>
+                          <input value="—" disabled />
+                        </label>
+                        <label className="field">
+                          <span>Concurrent invocations</span>
+                          <input value="—" disabled />
+                        </label>
+                        <label className="field">
+                          <span>Monthly quota</span>
+                          <input value="—" disabled />
+                        </label>
+                      </div>
+                      <div className="settings-placeholder">Rate limit API not available yet.</div>
                     </div>
                     <div className="settings-section">
                       <h3>SLA Thresholds</h3>
                       <p>Define latency, error rate, and uptime targets.</p>
-                      <div className="settings-placeholder">SLA thresholds coming soon.</div>
+                      <div className="settings-form">
+                        <label className="field">
+                          <span>p95 latency (ms)</span>
+                          <input value="—" disabled />
+                        </label>
+                        <label className="field">
+                          <span>Error rate (%)</span>
+                          <input value="—" disabled />
+                        </label>
+                        <label className="field">
+                          <span>Uptime target (%)</span>
+                          <input value="—" disabled />
+                        </label>
+                      </div>
+                      <div className="settings-placeholder">SLA configuration API not available yet.</div>
                     </div>
                     <div className="settings-section">
                       <h3>Notifications</h3>
