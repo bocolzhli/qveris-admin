@@ -1337,6 +1337,38 @@ function ApiKeysList({ canEdit }) {
   const [state, setState] = useState('loading')
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 })
   const [items, setItems] = useState([])
+  const [showCreate, setShowCreate] = useState(false)
+  const [owner, setOwner] = useState('')
+  const [createState, setCreateState] = useState('idle')
+  const [createdKey, setCreatedKey] = useState(null)
+  const [revokeTarget, setRevokeTarget] = useState(null)
+
+  const loadKeys = async (signal) => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+    try {
+      const response = await fetch('/admin/api-keys', {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      })
+      if (!response.ok) {
+        throw new Error('Failed to load API keys')
+      }
+      const payload = await response.json()
+      setItems(payload.items ?? [])
+      setSummary({
+        total: payload.total ?? 0,
+        active: payload.active ?? 0,
+        inactive: payload.inactive ?? 0,
+      })
+      setState('ready')
+    } catch (error) {
+      setState('error')
+    }
+  }
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -1347,21 +1379,8 @@ function ApiKeysList({ canEdit }) {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const response = await fetch('/admin/api-keys', {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          throw new Error('Failed to load API keys')
-        }
-        const payload = await response.json()
-        setItems(payload.items ?? [])
-        setSummary({
-          total: payload.total ?? 0,
-          active: payload.active ?? 0,
-          inactive: payload.inactive ?? 0,
-        })
-        setState('ready')
+        setState('loading')
+        await loadKeys(controller.signal)
       } catch (error) {
         setState('error')
       }
@@ -1385,7 +1404,7 @@ function ApiKeysList({ canEdit }) {
           <p>Monitor key inventory, activation status, and usage volume.</p>
         </div>
         {canEdit ? (
-          <button className="primary-action" type="button">
+          <button className="primary-action" type="button" onClick={() => setShowCreate(true)}>
             Create Key
           </button>
         ) : (
@@ -1422,12 +1441,142 @@ function ApiKeysList({ canEdit }) {
             <span className="invocation-meta">
               {item.created_at ? new Date(item.created_at).toLocaleString() : '—'}
             </span>
+            <div className="api-keys-actions">
+              {canEdit ? (
+                <button
+                  className="ghost-action"
+                  type="button"
+                  onClick={() => setRevokeTarget(item)}
+                  disabled={!item.is_active}
+                >
+                  Revoke
+                </button>
+              ) : null}
+            </div>
           </div>
         ))}
         {state === 'ready' && items.length === 0 ? (
           <div className="tools-empty">No API keys created yet.</div>
         ) : null}
       </div>
+      {showCreate ? (
+        <div className="modal-backdrop" onClick={() => setShowCreate(false)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Create API Key</p>
+                <h2>Generate a new key</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setShowCreate(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <label className="field">
+                <span>Owner</span>
+                <input value={owner} onChange={(event) => setOwner(event.target.value)} />
+              </label>
+              {createdKey ? (
+                <div className="summary-content">{createdKey}</div>
+              ) : null}
+              <div className="form-actions">
+                <button className="ghost-action" type="button" onClick={() => setShowCreate(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={!owner.trim() || createState === 'saving'}
+                  onClick={async () => {
+                    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+                    if (!token) {
+                      return
+                    }
+                    setCreateState('saving')
+                    try {
+                      const response = await fetch('/admin/api-keys', {
+                        method: 'POST',
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ owner: owner.trim() }),
+                      })
+                      if (!response.ok) {
+                        throw new Error('Failed to create key')
+                      }
+                      const payload = await response.json()
+                      setCreatedKey(payload.key)
+                      await loadKeys()
+                    } catch (error) {
+                      setCreateState('error')
+                    } finally {
+                      setCreateState('idle')
+                    }
+                  }}
+                >
+                  {createState === 'saving' ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {revokeTarget ? (
+        <div className="modal-backdrop" onClick={() => setRevokeTarget(null)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Revoke API Key</p>
+                <h2>{revokeTarget.owner}</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setRevokeTarget(null)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>This action disables the key immediately and cannot be undone.</p>
+              <div className="form-actions">
+                <button className="ghost-action" type="button" onClick={() => setRevokeTarget(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={async () => {
+                    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+                    if (!token) {
+                      return
+                    }
+                    try {
+                      await fetch(`/admin/api-keys/${revokeTarget.id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` },
+                      })
+                      setRevokeTarget(null)
+                      await loadKeys()
+                    } catch (error) {
+                      setRevokeTarget(null)
+                    }
+                  }}
+                >
+                  Confirm Revoke
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

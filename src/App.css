@@ -304,7 +304,7 @@
 
 .api-keys-row {
   display: grid;
-  grid-template-columns: minmax(200px, 1.4fr) minmax(120px, 0.8fr) minmax(180px, 1fr);
+  grid-template-columns: minmax(200px, 1.4fr) minmax(120px, 0.8fr) minmax(180px, 1fr) minmax(120px, 0.6fr);
   gap: 1rem;
   align-items: center;
   padding: 0.85rem 1rem;
@@ -498,6 +498,11 @@
 .summary-card strong {
   font-size: 1.4rem;
   color: #0b242f;
+}
+
+.api-keys-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .invocation-detail-card {
