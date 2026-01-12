@@ -488,7 +488,7 @@ function EndpointFormPage({ mode, canEdit }) {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const response = await fetch('/admin/tools?status=active&page=1&page_size=200', {
+        const response = await fetch('/admin/tools?status=active&page=1&page_size=50', {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         })
