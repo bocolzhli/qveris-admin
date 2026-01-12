@@ -242,7 +242,7 @@
 
 .invocations-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.2fr) minmax(80px, 0.6fr) minmax(60px, 0.5fr) minmax(120px, 0.9fr) minmax(160px, 1.2fr) minmax(220px, 2fr) minmax(160px, 1fr);
+  grid-template-columns: minmax(140px, 1.2fr) minmax(80px, 0.6fr) minmax(60px, 0.5fr) minmax(120px, 0.9fr) minmax(160px, 1.2fr) minmax(220px, 2fr) minmax(160px, 1fr) minmax(100px, 0.7fr);
   gap: 1rem;
   align-items: center;
   padding: 0.85rem 1rem;
@@ -332,42 +332,6 @@
   text-overflow: ellipsis;
 }
 
-.summary-link {
-  background: none;
-  border: none;
-  padding: 0;
-  text-align: left;
-  color: rgba(12, 31, 42, 0.85);
-  cursor: pointer;
-  font-size: 0.9rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.summary-link:focus-visible {
-  outline: 2px solid rgba(204, 90, 42, 0.6);
-  outline-offset: 2px;
-}
-
-.summary-meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  background: rgba(12, 31, 42, 0.04);
-}
-
-.summary-meta h4 {
-  margin: 0 0 0.35rem;
-}
-
-.summary-meta p {
-  margin: 0;
-  color: rgba(12, 31, 42, 0.7);
-}
-
 .summary-content {
   margin: 0;
   background: rgba(12, 31, 42, 0.05);
@@ -382,6 +346,34 @@
   white-space: pre-wrap;
   word-break: break-word;
   box-sizing: border-box;
+}
+
+.invocation-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.invocation-detail-card {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.invocation-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.detail-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.detail-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 .endpoint-controls {
@@ -738,7 +730,7 @@
     display: none;
   }
 
-  .summary-meta {
+  .invocation-detail-grid {
     grid-template-columns: 1fr;
   }
 }

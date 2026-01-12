@@ -755,6 +755,7 @@ function EndpointFormPage({ mode, canEdit }) {
 }
 
 function InvocationsList() {
+  const navigate = useNavigate()
   const [state, setState] = useState('loading')
   const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
   const [page, setPage] = useState(1)
@@ -764,7 +765,6 @@ function InvocationsList() {
   const [endTime, setEndTime] = useState('')
   const [tools, setTools] = useState([])
   const [toolsState, setToolsState] = useState('loading')
-  const [summaryModal, setSummaryModal] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -925,6 +925,7 @@ function InvocationsList() {
           <span>Trace</span>
           <span>Summary</span>
           <span>Created</span>
+          <span>Details</span>
         </div>
         {data.items.map((log) => (
           <div key={log.id} className="invocations-row">
@@ -935,14 +936,17 @@ function InvocationsList() {
             <span>{log.response_status_code}</span>
             <span className="invocation-meta">{log.caller_id || '—'}</span>
             <span className="invocation-meta">{log.trace_id}</span>
-            <button
-              className="summary-link"
-              type="button"
-              onClick={() => setSummaryModal(log)}
-            >
-              {log.response_summary || '—'}
-            </button>
+            <span className="invocation-summary">{log.response_summary || '—'}</span>
             <span className="invocation-meta">{formatTimestamp(log.created_at)}</span>
+            <div className="invocation-actions">
+              <button
+                className="ghost-action"
+                type="button"
+                onClick={() => navigate(`/invocations/${log.id}`)}
+              >
+                View
+              </button>
+            </div>
           </div>
         ))}
         {state === 'ready' && data.items.length === 0 ? (
@@ -970,50 +974,164 @@ function InvocationsList() {
           Next
         </button>
       </div>
-      {summaryModal ? (
-        <div className="modal-backdrop" onClick={() => setSummaryModal(null)}>
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
+    </div>
+  )
+}
+
+function InvocationDetail() {
+  const { invocationId } = useParams()
+  const navigate = useNavigate()
+  const [state, setState] = useState('loading')
+  const [detail, setDetail] = useState(null)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [copyState, setCopyState] = useState({})
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      setErrorMessage('Missing session token.')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch(`/admin/invocations/${invocationId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load invocation')
+        }
+        const payload = await response.json()
+        setDetail(payload)
+        setState('ready')
+      } catch (error) {
+        setState('error')
+        setErrorMessage('Unable to load invocation detail.')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [invocationId])
+
+  const handleCopy = async (key, value) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopyState((prev) => ({ ...prev, [key]: 'Copied' }))
+    } catch (error) {
+      setCopyState((prev) => ({ ...prev, [key]: 'Failed' }))
+    } finally {
+      setTimeout(() => {
+        setCopyState((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }, 1200)
+    }
+  }
+
+  if (state === 'loading') {
+    return (
+      <div className="content-card">
+        <p>Loading invocation detail...</p>
+      </div>
+    )
+  }
+
+  if (state === 'error' || !detail) {
+    return (
+      <div className="content-card">
+        <h1>Invocation Detail</h1>
+        <p>{errorMessage || 'Unable to load invocation detail.'}</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/invocations')}>
+          Back to Invocations
+        </button>
+      </div>
+    )
+  }
+
+  const requestPayload = JSON.stringify(detail.request_arguments ?? {}, null, 2)
+  const responsePayload =
+    detail.response_summary && detail.response_summary.trim()
+      ? detail.response_summary
+      : '—'
+
+  return (
+    <div className="content-card invocation-detail-card">
+      <div className="card-header tool-detail-header">
+        <div>
+          <p className="eyebrow">Invocation Detail</p>
+          <h1>{detail.tool_name}</h1>
+          <p>Invocation {detail.id}</p>
+        </div>
+        <div className="tool-detail-actions">
+          <button className="ghost-action" type="button" onClick={() => navigate('/invocations')}>
+            Back to Invocations
+          </button>
+          <button
+            className="ghost-action"
+            type="button"
+            onClick={() =>
+              navigate(`/traces?trace_id=${encodeURIComponent(detail.trace_id || '')}`)
+            }
           >
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">Invocation Summary</p>
-                <h2>{summaryModal.tool_name}</h2>
-              </div>
-              <button className="ghost-action" type="button" onClick={() => setSummaryModal(null)}>
-                Close
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="summary-meta">
-                <div>
-                  <h4>Caller</h4>
-                  <p>{summaryModal.caller_id || '—'}</p>
-                </div>
-                <div>
-                  <h4>Trace</h4>
-                  <p>{summaryModal.trace_id || '—'}</p>
-                </div>
-                <div>
-                  <h4>Status</h4>
-                  <p>{summaryModal.status}</p>
-                </div>
-                <div>
-                  <h4>HTTP</h4>
-                  <p>{summaryModal.response_status_code}</p>
-                </div>
-              </div>
-              <div>
-                <h3>Summary</h3>
-                <pre className="summary-content">{summaryModal.response_summary || '—'}</pre>
-              </div>
-            </div>
-          </div>
+            View Trace
+          </button>
+        </div>
+      </div>
+      {detail.error_message ? (
+        <div className="status-banner">
+          {detail.error_message}
         </div>
       ) : null}
+      <div className="tool-meta-grid">
+        <div>
+          <h4>Status</h4>
+          <p>{detail.status}</p>
+        </div>
+        <div>
+          <h4>HTTP</h4>
+          <p>{detail.response_status_code}</p>
+        </div>
+        <div>
+          <h4>Caller</h4>
+          <p>{detail.caller_id || '—'}</p>
+        </div>
+        <div>
+          <h4>Trace</h4>
+          <p>{detail.trace_id || '—'}</p>
+        </div>
+      </div>
+      <div className="invocation-detail-grid">
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Request Payload</h3>
+            <button
+              className="ghost-action"
+              type="button"
+              onClick={() => handleCopy('request', requestPayload)}
+            >
+              {copyState.request || 'Copy'}
+            </button>
+          </div>
+          <pre className="summary-content">{requestPayload}</pre>
+        </div>
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Response Payload</h3>
+            <button
+              className="ghost-action"
+              type="button"
+              onClick={() => handleCopy('response', responsePayload)}
+            >
+              {copyState.response || 'Copy'}
+            </button>
+          </div>
+          <pre className="summary-content">{responsePayload}</pre>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1805,6 +1923,12 @@ function AdminLayout({ role }) {
             path="/invocations"
             element={
               <InvocationsList />
+            }
+          />
+          <Route
+            path="/invocations/:invocationId"
+            element={
+              <InvocationDetail />
             }
           />
           <Route
