@@ -245,6 +245,212 @@ function ToolsList({ canEdit }) {
   )
 }
 
+function EndpointsList({ canEdit }) {
+  const [status, setStatus] = useState('active')
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
+  const [state, setState] = useState('loading')
+  const [actionState, setActionState] = useState({})
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+
+    const controller = new AbortController()
+
+    const load = async () => {
+      try {
+        setState('loading')
+        const response = await fetch(
+          `/admin/endpoints?status=${status}&page=${page}&page_size=8`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          }
+        )
+        if (!response.ok) {
+          throw new Error('Failed to load endpoints')
+        }
+        const payload = await response.json()
+        setData(payload)
+        setState('ready')
+      } catch (error) {
+        setState('error')
+      }
+    }
+
+    void load()
+    return () => controller.abort()
+  }, [status, page])
+
+  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size))
+  const helperText =
+    state === 'loading'
+      ? 'Loading endpoints...'
+      : state === 'error'
+        ? 'Unable to load endpoints.'
+        : `${data.total} endpoints found.`
+
+  const formatTimestamp = (value) => {
+    if (!value) {
+      return '—'
+    }
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return '—'
+    }
+    return date.toLocaleString()
+  }
+
+  const updateEndpoint = async (endpointId, isActive) => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      return
+    }
+    setActionState((prev) => ({ ...prev, [endpointId]: 'saving' }))
+    try {
+      const response = await fetch(`/admin/endpoints/${endpointId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ is_active: isActive }),
+      })
+      if (!response.ok) {
+        throw new Error('Failed to update endpoint')
+      }
+      const payload = await response.json()
+      setData((prev) => ({
+        ...prev,
+        items: prev.items.map((item) =>
+          item.id === endpointId ? { ...item, ...payload } : item
+        ),
+      }))
+      setActionState((prev) => ({ ...prev, [endpointId]: 'saved' }))
+    } catch (error) {
+      setActionState((prev) => ({ ...prev, [endpointId]: 'error' }))
+    } finally {
+      setTimeout(() => {
+        setActionState((prev) => {
+          const next = { ...prev }
+          delete next[endpointId]
+          return next
+        })
+      }, 1200)
+    }
+  }
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>Endpoints</h1>
+          <p>Monitor endpoint health, priorities, and execution readiness.</p>
+        </div>
+        {canEdit ? (
+          <button className="primary-action" type="button">
+            Add Endpoint
+          </button>
+        ) : (
+          <span className="role-badge">Viewer</span>
+        )}
+      </div>
+      <div className="tools-controls">
+        <div className="filter-group">
+          <label htmlFor="endpoint-status-filter">Status</label>
+          <select
+            id="endpoint-status-filter"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value)
+              setPage(1)
+            }}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <span className="helper-text">{helperText}</span>
+      </div>
+      <div className="endpoints-table">
+        <div className="endpoints-row endpoints-head">
+          <span>Tool</span>
+          <span>Type</span>
+          <span>Status</span>
+          <span>Priority</span>
+          <span>Health</span>
+          <span>Last Checked</span>
+          <span>Controls</span>
+        </div>
+        {data.items.map((endpoint) => {
+          const action = actionState[endpoint.id]
+          return (
+            <div key={endpoint.id} className="endpoints-row">
+              <span className="endpoint-tool">{endpoint.tool_name}</span>
+              <span>{endpoint.type}</span>
+              <span className={endpoint.is_active ? 'status-pill active' : 'status-pill'}>
+                {endpoint.is_active ? 'Active' : 'Inactive'}
+              </span>
+              <span>{endpoint.priority}</span>
+              <span className={`health-pill ${String(endpoint.health_status).toLowerCase()}`}>
+                {endpoint.health_status}
+              </span>
+              <span className="endpoint-meta">{formatTimestamp(endpoint.last_checked_at)}</span>
+              <div className="endpoint-controls">
+                {canEdit ? (
+                  <button
+                    className="ghost-action"
+                    type="button"
+                    onClick={() => updateEndpoint(endpoint.id, !endpoint.is_active)}
+                    disabled={action === 'saving'}
+                  >
+                    {action === 'saving'
+                      ? 'Saving...'
+                      : endpoint.is_active
+                        ? 'Disable'
+                        : 'Enable'}
+                  </button>
+                ) : (
+                  <span className="role-badge">Viewer</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {state === 'ready' && data.items.length === 0 ? (
+          <div className="tools-empty">No endpoints match this filter.</div>
+        ) : null}
+      </div>
+      <div className="pagination">
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span>
+          Page {page} of {totalPages}
+        </span>
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ToolDetail({ canEdit }) {
   const { toolId } = useParams()
   const navigate = useNavigate()
@@ -1009,10 +1215,7 @@ function AdminLayout({ role }) {
           <Route
             path="/endpoints"
             element={
-              <Placeholder
-                title="Endpoints"
-                description="Review endpoint configurations, health status, and priorities."
-              />
+              <EndpointsList canEdit={canEdit} />
             }
           />
           <Route
