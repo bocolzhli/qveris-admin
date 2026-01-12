@@ -1137,6 +1137,7 @@ function InvocationDetail() {
 }
 
 function TraceSearch() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTraceId = searchParams.get('trace_id') || ''
   const [traceId, setTraceId] = useState(initialTraceId)
@@ -1217,17 +1218,20 @@ function TraceSearch() {
       </form>
       <span className="helper-text">{helperText}</span>
       {state === 'ready' && logs.length ? (
-        <div className="invocations-table">
-          <div className="invocations-row invocations-head">
+        <div className="trace-table">
+          <div className="trace-row trace-head">
+            <span>Step</span>
             <span>Tool</span>
             <span>Status</span>
             <span>HTTP</span>
             <span>Caller</span>
             <span>Summary</span>
             <span>Created</span>
+            <span>Details</span>
           </div>
-          {logs.map((log) => (
-            <div key={log.id} className="invocations-row">
+          {logs.map((log, index) => (
+            <div key={log.id} className="trace-row">
+              <span className="trace-step">{index + 1}</span>
               <span className="invocation-tool">{log.tool_name}</span>
               <span className={`status-pill ${log.status === 'success' ? 'active' : ''}`}>
                 {log.status}
@@ -1236,6 +1240,15 @@ function TraceSearch() {
               <span className="invocation-meta">{log.caller_id || '—'}</span>
               <span className="invocation-summary">{log.response_summary || '—'}</span>
               <span className="invocation-meta">{new Date(log.created_at).toLocaleString()}</span>
+              <div className="trace-actions">
+                <button
+                  className="ghost-action"
+                  type="button"
+                  onClick={() => navigate(`/invocations/${log.id}`)}
+                >
+                  View
+                </button>
+              </div>
             </div>
           ))}
         </div>
