@@ -1288,7 +1288,8 @@ function TraceSearch() {
 
 function ErrorAggregationView() {
   const [state, setState] = useState('loading')
-  const [items, setItems] = useState([])
+  const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -1299,7 +1300,12 @@ function ErrorAggregationView() {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const response = await fetch('/admin/errors', {
+        setState('loading')
+        const params = new URLSearchParams({
+          page: String(page),
+          page_size: '10',
+        })
+        const response = await fetch(`/admin/errors?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         })
@@ -1307,7 +1313,7 @@ function ErrorAggregationView() {
           throw new Error('Failed to load errors')
         }
         const payload = await response.json()
-        setItems(payload.items ?? [])
+        setData(payload)
         setState('ready')
       } catch (error) {
         setState('error')
@@ -1315,14 +1321,15 @@ function ErrorAggregationView() {
     }
     void load()
     return () => controller.abort()
-  }, [])
+  }, [page])
 
+  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size))
   const helperText =
     state === 'loading'
       ? 'Loading errors...'
       : state === 'error'
         ? 'Unable to load errors.'
-        : `${items.length} error groups found.`
+        : `${data.total} error groups found.`
 
   return (
     <div className="content-card">
@@ -1341,7 +1348,7 @@ function ErrorAggregationView() {
           <span>Last Seen</span>
           <span>Retryable</span>
         </div>
-        {items.map((item, index) => (
+        {data.items.map((item, index) => (
           <div key={`${item.error_message}-${index}`} className="errors-row">
             <span className="error-message">{item.error_message}</span>
             <span className="error-tool">{item.tool_name}</span>
@@ -1352,9 +1359,30 @@ function ErrorAggregationView() {
             <span className="retry-pill">{item.retryable ?? '—'}</span>
           </div>
         ))}
-        {state === 'ready' && items.length === 0 ? (
+        {state === 'ready' && data.items.length === 0 ? (
           <div className="tools-empty">No errors logged yet.</div>
         ) : null}
+      </div>
+      <div className="pagination">
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span>
+          Page {page} of {totalPages}
+        </span>
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
       </div>
     </div>
   )
@@ -1364,20 +1392,26 @@ function ApiKeysList({ canEdit }) {
   const [state, setState] = useState('loading')
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 })
   const [items, setItems] = useState([])
+  const [page, setPage] = useState(1)
   const [showCreate, setShowCreate] = useState(false)
   const [owner, setOwner] = useState('')
   const [createState, setCreateState] = useState('idle')
   const [createdKey, setCreatedKey] = useState(null)
   const [revokeTarget, setRevokeTarget] = useState(null)
+  const pageSize = 10
 
-  const loadKeys = async (signal) => {
+  const loadKeys = async (signal, pageOverride) => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
     if (!token) {
       setState('error')
       return
     }
     try {
-      const response = await fetch('/admin/api-keys', {
+      const params = new URLSearchParams({
+        page: String(pageOverride ?? page),
+        page_size: String(pageSize),
+      })
+      const response = await fetch(`/admin/api-keys?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
         signal,
       })
@@ -1414,14 +1448,15 @@ function ApiKeysList({ canEdit }) {
     }
     void load()
     return () => controller.abort()
-  }, [])
+  }, [page])
 
+  const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
   const helperText =
     state === 'loading'
       ? 'Loading API keys...'
       : state === 'error'
         ? 'Unable to load API keys.'
-        : `${items.length} keys loaded.`
+        : `${summary.total} keys total.`
 
   return (
     <div className="content-card">
@@ -1486,6 +1521,27 @@ function ApiKeysList({ canEdit }) {
           <div className="tools-empty">No API keys created yet.</div>
         ) : null}
       </div>
+      <div className="pagination">
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span>
+          Page {page} of {totalPages}
+        </span>
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
       {showCreate ? (
         <div className="modal-backdrop" onClick={() => setShowCreate(false)}>
           <div
@@ -1539,7 +1595,8 @@ function ApiKeysList({ canEdit }) {
                       }
                       const payload = await response.json()
                       setCreatedKey(payload.key)
-                      await loadKeys()
+                      setPage(1)
+                      await loadKeys(undefined, 1)
                     } catch (error) {
                       setCreateState('error')
                     } finally {
