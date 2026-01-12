@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
@@ -114,12 +114,11 @@ function Dashboard() {
 }
 
 function ToolsList({ canEdit }) {
+  const navigate = useNavigate()
   const [status, setStatus] = useState('active')
   const [page, setPage] = useState(1)
   const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
   const [state, setState] = useState('loading')
-  const [detailState, setDetailState] = useState('idle')
-  const [selectedTool, setSelectedTool] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -207,27 +206,7 @@ function ToolsList({ canEdit }) {
             <button
               className="tool-link"
               type="button"
-              onClick={async () => {
-                const token = localStorage.getItem(AUTH_TOKEN_KEY)
-                if (!token) {
-                  return
-                }
-                setDetailState('loading')
-                setSelectedTool(null)
-                try {
-                  const response = await fetch(`/admin/tools/${tool.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                  })
-                  if (!response.ok) {
-                    throw new Error('Failed to load tool')
-                  }
-                  const payload = await response.json()
-                  setSelectedTool(payload)
-                  setDetailState('ready')
-                } catch (error) {
-                  setDetailState('error')
-                }
-              }}
+              onClick={() => navigate(`/tools/${tool.id}`)}
             >
               {tool.name}
             </button>
@@ -262,68 +241,300 @@ function ToolsList({ canEdit }) {
           Next
         </button>
       </div>
-      {detailState !== 'idle' ? (
-        <div className="modal-backdrop">
-          <div className="modal-card" role="dialog" aria-modal="true">
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">Tool Detail</p>
-                <h2>{selectedTool?.name || 'Loading...'}</h2>
-              </div>
-              <button
-                className="ghost-action"
-                type="button"
-                onClick={() => {
-                  setDetailState('idle')
-                  setSelectedTool(null)
-                }}
-              >
-                Close
-              </button>
-            </div>
-            {detailState === 'loading' ? (
-              <p>Loading tool detail...</p>
-            ) : detailState === 'error' ? (
-              <p>Unable to load tool detail.</p>
-            ) : (
-              <div className="modal-body">
-                <div>
-                  <h3>Overview</h3>
-                  <p>{selectedTool?.description}</p>
-                </div>
-                <div className="schema-grid">
-                  <div>
-                    <h4>Parameters Schema</h4>
-                    <pre>{JSON.stringify(selectedTool?.parameters_schema, null, 2)}</pre>
-                  </div>
-                  <div>
-                    <h4>Result Schema</h4>
-                    <pre>{JSON.stringify(selectedTool?.result_schema, null, 2)}</pre>
-                  </div>
-                </div>
-                <div className="meta-grid">
-                  <div>
-                    <h4>Capability Scope</h4>
-                    <p>{selectedTool?.capability_scope || '—'}</p>
-                  </div>
-                  <div>
-                    <h4>Required Fields</h4>
-                    <p>{selectedTool?.required_fields_summary || '—'}</p>
-                  </div>
-                  <div>
-                    <h4>Common Failures</h4>
-                    <p>
-                      {selectedTool?.common_failures
-                        ? selectedTool.common_failures.join(', ')
-                        : '—'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+    </div>
+  )
+}
+
+function ToolDetail({ canEdit }) {
+  const { toolId } = useParams()
+  const navigate = useNavigate()
+  const [state, setState] = useState('loading')
+  const [tool, setTool] = useState(null)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [draft, setDraft] = useState({
+    parametersText: '',
+    resultText: '',
+    isActive: true,
+  })
+  const [saveState, setSaveState] = useState('idle')
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      setErrorMessage('Missing session token.')
+      return
+    }
+
+    const controller = new AbortController()
+
+    const load = async () => {
+      try {
+        setState('loading')
+        const response = await fetch(`/admin/tools/${toolId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load tool')
+        }
+        const payload = await response.json()
+        setTool(payload)
+        setDraft({
+          parametersText: JSON.stringify(payload.parameters_schema, null, 2),
+          resultText:
+            payload.result_schema === null || payload.result_schema === undefined
+              ? ''
+              : JSON.stringify(payload.result_schema, null, 2),
+          isActive: payload.is_active,
+        })
+        setState('ready')
+      } catch (error) {
+        setState('error')
+        setErrorMessage('Unable to load tool detail.')
+      }
+    }
+
+    void load()
+    return () => controller.abort()
+  }, [toolId])
+
+  const hasChanges =
+    tool &&
+    (draft.isActive !== tool.is_active ||
+      draft.parametersText.trim() !== JSON.stringify(tool.parameters_schema, null, 2) ||
+      draft.resultText.trim() !==
+        (tool.result_schema === null || tool.result_schema === undefined
+          ? ''
+          : JSON.stringify(tool.result_schema, null, 2)))
+
+  const handleSave = async () => {
+    if (!tool) {
+      return
+    }
+    setErrorMessage('')
+    let parametersSchema = null
+    let resultSchema = null
+
+    try {
+      if (!draft.parametersText.trim()) {
+        throw new Error('Parameters schema is required.')
+      }
+      parametersSchema = JSON.parse(draft.parametersText)
+    } catch (error) {
+      setErrorMessage('Parameters schema must be valid JSON.')
+      return
+    }
+
+    if (draft.resultText.trim()) {
+      try {
+        resultSchema = JSON.parse(draft.resultText)
+      } catch (error) {
+        setErrorMessage('Result schema must be valid JSON.')
+        return
+      }
+    }
+
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setErrorMessage('Missing session token.')
+      return
+    }
+
+    setSaveState('saving')
+    try {
+      const response = await fetch(`/admin/tools/${tool.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          parameters_schema: parametersSchema,
+          result_schema: resultSchema,
+          is_active: draft.isActive,
+        }),
+      })
+      if (!response.ok) {
+        throw new Error('Failed to update tool')
+      }
+      const payload = await response.json()
+      setTool(payload)
+      setDraft({
+        parametersText: JSON.stringify(payload.parameters_schema, null, 2),
+        resultText:
+          payload.result_schema === null || payload.result_schema === undefined
+            ? ''
+            : JSON.stringify(payload.result_schema, null, 2),
+        isActive: payload.is_active,
+      })
+      setSaveState('saved')
+    } catch (error) {
+      setSaveState('error')
+      setErrorMessage('Unable to save changes.')
+    } finally {
+      setTimeout(() => setSaveState('idle'), 1500)
+    }
+  }
+
+  const resetDraft = () => {
+    if (!tool) {
+      return
+    }
+    setDraft({
+      parametersText: JSON.stringify(tool.parameters_schema, null, 2),
+      resultText:
+        tool.result_schema === null || tool.result_schema === undefined
+          ? ''
+          : JSON.stringify(tool.result_schema, null, 2),
+      isActive: tool.is_active,
+    })
+    setErrorMessage('')
+  }
+
+  if (state === 'loading') {
+    return (
+      <div className="content-card">
+        <p>Loading tool detail...</p>
+      </div>
+    )
+  }
+
+  if (state === 'error' || !tool) {
+    return (
+      <div className="content-card">
+        <h1>Tool Detail</h1>
+        <p>{errorMessage || 'Unable to load tool detail.'}</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+          Back to Tools
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="content-card tool-detail-card">
+      <div className="card-header tool-detail-header">
+        <div>
+          <p className="eyebrow">Tool Detail</p>
+          <h1>{tool.name}</h1>
+          <p>{tool.description}</p>
+        </div>
+        <div className="tool-detail-actions">
+          <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+            Back to Tools
+          </button>
+          {canEdit ? (
+            <button
+              className="primary-action"
+              type="button"
+              onClick={handleSave}
+              disabled={!hasChanges || saveState === 'saving'}
+            >
+              {saveState === 'saving' ? 'Saving...' : 'Save Changes'}
+            </button>
+          ) : (
+            <span className="role-badge">Viewer</span>
+          )}
+        </div>
+      </div>
+      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      {!tool.is_active ? (
+        <div className="status-banner">
+          Tool is disabled. Invocations are blocked until it is re-enabled.
         </div>
       ) : null}
+      <div className="tool-status-row">
+        <span className={tool.is_active ? 'status-pill active' : 'status-pill'}>
+          {tool.is_active ? 'Active' : 'Inactive'}
+        </span>
+        <label className={`toggle ${!canEdit ? 'is-disabled' : ''}`}>
+          <input
+            type="checkbox"
+            checked={draft.isActive}
+            disabled={!canEdit}
+            onChange={(event) =>
+              setDraft((prev) => ({
+                ...prev,
+                isActive: event.target.checked,
+              }))
+            }
+          />
+          <span className="toggle-track">
+            <span className="toggle-thumb" />
+          </span>
+          <span>{draft.isActive ? 'Enabled' : 'Disabled'}</span>
+        </label>
+        {canEdit ? (
+          <button className="ghost-action" type="button" onClick={resetDraft} disabled={!hasChanges}>
+            Discard
+          </button>
+        ) : null}
+      </div>
+      <div className="tool-meta-grid">
+        <div>
+          <h4>Tags</h4>
+          <p>{tool.tags?.length ? tool.tags.join(', ') : '—'}</p>
+        </div>
+        <div>
+          <h4>Capability Scope</h4>
+          <p>{tool.capability_scope || '—'}</p>
+        </div>
+        <div>
+          <h4>Required Fields</h4>
+          <p>{tool.required_fields_summary || '—'}</p>
+        </div>
+        <div>
+          <h4>Common Failures</h4>
+          <p>{tool.common_failures?.length ? tool.common_failures.join(', ') : '—'}</p>
+        </div>
+        <div>
+          <h4>Input Examples</h4>
+          <p>{tool.input_examples?.length ? `${tool.input_examples.length} samples` : '—'}</p>
+        </div>
+        <div>
+          <h4>Active Endpoints</h4>
+          <p>{tool.endpoints?.length ?? 0}</p>
+        </div>
+      </div>
+      <div className="tool-schema-grid">
+        <div>
+          <h3>Parameters Schema</h3>
+          {canEdit ? (
+            <textarea
+              className="schema-editor"
+              value={draft.parametersText}
+              onChange={(event) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  parametersText: event.target.value,
+                }))
+              }
+              rows={14}
+            />
+          ) : (
+            <pre>{JSON.stringify(tool.parameters_schema, null, 2)}</pre>
+          )}
+        </div>
+        <div>
+          <h3>Result Schema</h3>
+          {canEdit ? (
+            <textarea
+              className="schema-editor"
+              value={draft.resultText}
+              onChange={(event) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  resultText: event.target.value,
+                }))
+              }
+              rows={14}
+            />
+          ) : (
+            <pre>{JSON.stringify(tool.result_schema, null, 2)}</pre>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -469,6 +680,12 @@ function AdminLayout({ role }) {
             path="/tools"
             element={
               <ToolsList canEdit={canEdit} />
+            }
+          />
+          <Route
+            path="/tools/:toolId"
+            element={
+              <ToolDetail canEdit={canEdit} />
             }
           />
           <Route

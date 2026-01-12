@@ -258,6 +258,132 @@
   margin: 0;
 }
 
+.tool-detail-card {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.tool-detail-header {
+  align-items: center;
+}
+
+.tool-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.status-banner {
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: rgba(204, 90, 42, 0.12);
+  color: #8a3515;
+  font-size: 0.9rem;
+}
+
+.tool-status-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: rgba(12, 31, 42, 0.7);
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  width: 46px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(12, 31, 42, 0.2);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background 0.2s ease;
+}
+
+.toggle-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 4px 10px rgba(12, 31, 42, 0.25);
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: rgba(204, 90, 42, 0.5);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(22px);
+}
+
+.toggle.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.tool-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(12, 31, 42, 0.04);
+}
+
+.tool-meta-grid h4 {
+  margin: 0 0 0.35rem;
+}
+
+.tool-meta-grid p {
+  margin: 0;
+  color: rgba(12, 31, 42, 0.7);
+}
+
+.tool-schema-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.tool-schema-grid pre,
+.schema-editor {
+  margin: 0;
+  background: rgba(12, 31, 42, 0.05);
+  border-radius: 12px;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  border: 1px solid rgba(12, 31, 42, 0.1);
+  font-family: 'SFMono-Regular', 'SF Mono', 'Menlo', monospace;
+  color: #0b242f;
+}
+
+.schema-editor {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+}
+
+.schema-editor:focus-visible {
+  outline: 2px solid rgba(204, 90, 42, 0.4);
+  outline-offset: 2px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -359,6 +485,14 @@
   }
 
   .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-schema-grid {
     grid-template-columns: 1fr;
   }
 }
