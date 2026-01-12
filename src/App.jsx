@@ -1259,6 +1259,179 @@ function TraceSearch() {
   )
 }
 
+function ErrorAggregationView() {
+  const [state, setState] = useState('loading')
+  const [items, setItems] = useState([])
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch('/admin/errors', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load errors')
+        }
+        const payload = await response.json()
+        setItems(payload.items ?? [])
+        setState('ready')
+      } catch (error) {
+        setState('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [])
+
+  const helperText =
+    state === 'loading'
+      ? 'Loading errors...'
+      : state === 'error'
+        ? 'Unable to load errors.'
+        : `${items.length} error groups found.`
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>Error Center</h1>
+          <p>Aggregate failures by tool and error signature.</p>
+        </div>
+      </div>
+      <span className="helper-text">{helperText}</span>
+      <div className="errors-table">
+        <div className="errors-row errors-head">
+          <span>Error</span>
+          <span>Tool</span>
+          <span>Count</span>
+          <span>Last Seen</span>
+          <span>Retryable</span>
+        </div>
+        {items.map((item, index) => (
+          <div key={`${item.error_message}-${index}`} className="errors-row">
+            <span className="error-message">{item.error_message}</span>
+            <span className="error-tool">{item.tool_name}</span>
+            <span>{item.count}</span>
+            <span className="invocation-meta">
+              {item.last_seen ? new Date(item.last_seen).toLocaleString() : '—'}
+            </span>
+            <span className="retry-pill">{item.retryable ?? '—'}</span>
+          </div>
+        ))}
+        {state === 'ready' && items.length === 0 ? (
+          <div className="tools-empty">No errors logged yet.</div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ApiKeysList({ canEdit }) {
+  const [state, setState] = useState('loading')
+  const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 })
+  const [items, setItems] = useState([])
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch('/admin/api-keys', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load API keys')
+        }
+        const payload = await response.json()
+        setItems(payload.items ?? [])
+        setSummary({
+          total: payload.total ?? 0,
+          active: payload.active ?? 0,
+          inactive: payload.inactive ?? 0,
+        })
+        setState('ready')
+      } catch (error) {
+        setState('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [])
+
+  const helperText =
+    state === 'loading'
+      ? 'Loading API keys...'
+      : state === 'error'
+        ? 'Unable to load API keys.'
+        : `${items.length} keys loaded.`
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>API Keys</h1>
+          <p>Monitor key inventory, activation status, and usage volume.</p>
+        </div>
+        {canEdit ? (
+          <button className="primary-action" type="button">
+            Create Key
+          </button>
+        ) : (
+          <span className="role-badge">Viewer</span>
+        )}
+      </div>
+      <div className="api-summary">
+        <div className="summary-card">
+          <span>Total Keys</span>
+          <strong>{summary.total}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Active Keys</span>
+          <strong>{summary.active}</strong>
+        </div>
+        <div className="summary-card">
+          <span>Inactive Keys</span>
+          <strong>{summary.inactive}</strong>
+        </div>
+      </div>
+      <span className="helper-text">{helperText}</span>
+      <div className="api-keys-table">
+        <div className="api-keys-row api-keys-head">
+          <span>Owner</span>
+          <span>Status</span>
+          <span>Created</span>
+        </div>
+        {items.map((item) => (
+          <div key={item.id} className="api-keys-row">
+            <span className="api-owner">{item.owner}</span>
+            <span className={item.is_active ? 'status-pill active' : 'status-pill'}>
+              {item.is_active ? 'Active' : 'Inactive'}
+            </span>
+            <span className="invocation-meta">
+              {item.created_at ? new Date(item.created_at).toLocaleString() : '—'}
+            </span>
+          </div>
+        ))}
+        {state === 'ready' && items.length === 0 ? (
+          <div className="tools-empty">No API keys created yet.</div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function ToolDetail({ canEdit }) {
   const { toolId } = useParams()
   const navigate = useNavigate()
@@ -2063,19 +2236,13 @@ function AdminLayout({ role }) {
           <Route
             path="/errors"
             element={
-              <Placeholder
-                title="Errors"
-                description="Aggregate failures and identify recurring issues."
-              />
+              <ErrorAggregationView />
             }
           />
           <Route
             path="/api-keys"
             element={
-              <Placeholder
-                title="API Keys"
-                description="Manage API keys, owners, and access levels."
-              />
+              <ApiKeysList canEdit={canEdit} />
             }
           />
           <Route
