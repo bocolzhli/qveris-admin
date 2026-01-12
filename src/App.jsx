@@ -170,7 +170,7 @@ function ToolsList({ canEdit }) {
           <p>Manage registered tools, endpoints, and execution policies.</p>
         </div>
         {canEdit ? (
-          <button className="primary-action" type="button">
+          <button className="primary-action" type="button" onClick={() => navigate('/tools/new')}>
             Create Tool
           </button>
         ) : (
@@ -426,6 +426,15 @@ function ToolDetail({ canEdit }) {
           </button>
           {canEdit ? (
             <button
+              className="ghost-action"
+              type="button"
+              onClick={() => navigate(`/tools/${tool.id}/edit`)}
+            >
+              Edit Tool
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button
               className="primary-action"
               type="button"
               onClick={handleSave}
@@ -535,6 +544,299 @@ function ToolDetail({ canEdit }) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function ToolFormPage({ mode, canEdit }) {
+  const navigate = useNavigate()
+  const { toolId } = useParams()
+  const [state, setState] = useState(mode === 'edit' ? 'loading' : 'ready')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [submitState, setSubmitState] = useState('idle')
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    tags: '',
+    capabilityScope: '',
+    parametersSchema: '{\n  \n}',
+    resultSchema: '',
+    inputExamples: '',
+    requiredFieldsSummary: '',
+    commonFailures: '',
+  })
+
+  useEffect(() => {
+    if (mode !== 'edit') {
+      return
+    }
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      setErrorMessage('Missing session token.')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch(`/admin/tools/${toolId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load tool')
+        }
+        const payload = await response.json()
+        setForm({
+          name: payload.name ?? '',
+          description: payload.description ?? '',
+          tags: payload.tags?.join(', ') ?? '',
+          capabilityScope: payload.capability_scope ?? '',
+          parametersSchema: JSON.stringify(payload.parameters_schema, null, 2),
+          resultSchema:
+            payload.result_schema === null || payload.result_schema === undefined
+              ? ''
+              : JSON.stringify(payload.result_schema, null, 2),
+          inputExamples:
+            payload.input_examples === null || payload.input_examples === undefined
+              ? ''
+              : JSON.stringify(payload.input_examples, null, 2),
+          requiredFieldsSummary: payload.required_fields_summary ?? '',
+          commonFailures: payload.common_failures?.join(', ') ?? '',
+        })
+        setState('ready')
+      } catch (error) {
+        setState('error')
+        setErrorMessage('Unable to load tool detail.')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [mode, toolId])
+
+  const updateField = (key) => (event) => {
+    const value = event.target.value
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const parseJsonField = (value, fieldLabel, allowEmpty) => {
+    if (allowEmpty && !value.trim()) {
+      return null
+    }
+    try {
+      return JSON.parse(value)
+    } catch (error) {
+      throw new Error(`${fieldLabel} must be valid JSON.`)
+    }
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    if (!canEdit) {
+      return
+    }
+    setErrorMessage('')
+    if (!form.name.trim() || !form.description.trim()) {
+      setErrorMessage('Name and description are required.')
+      return
+    }
+
+    let parametersSchema = null
+    let resultSchema = null
+    let inputExamples = null
+    try {
+      parametersSchema = parseJsonField(form.parametersSchema, 'Parameters schema', false)
+      resultSchema = parseJsonField(form.resultSchema, 'Result schema', true)
+      inputExamples = parseJsonField(form.inputExamples, 'Input examples', true)
+    } catch (error) {
+      setErrorMessage(error.message)
+      return
+    }
+
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      tags: form.tags.trim()
+        ? form.tags
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : null,
+      parameters_schema: parametersSchema,
+      result_schema: resultSchema,
+      capability_scope: form.capabilityScope.trim() || null,
+      input_examples: inputExamples,
+      required_fields_summary: form.requiredFieldsSummary.trim() || null,
+      common_failures: form.commonFailures.trim()
+        ? form.commonFailures
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : null,
+    }
+
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setErrorMessage('Missing session token.')
+      return
+    }
+
+    setSubmitState('saving')
+    try {
+      const response = await fetch(mode === 'edit' ? `/admin/tools/${toolId}` : '/admin/tools', {
+        method: mode === 'edit' ? 'PATCH' : 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null)
+        const errorText = detail?.detail || 'Unable to save tool.'
+        throw new Error(errorText)
+      }
+      const data = await response.json()
+      navigate(`/tools/${data.id}`)
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to save tool.')
+      setSubmitState('error')
+    } finally {
+      setTimeout(() => setSubmitState('idle'), 1500)
+    }
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="content-card">
+        <h1>Access restricted</h1>
+        <p>You do not have permission to manage tools.</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+          Back to Tools
+        </button>
+      </div>
+    )
+  }
+
+  if (state === 'loading') {
+    return (
+      <div className="content-card">
+        <p>Loading tool detail...</p>
+      </div>
+    )
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="content-card">
+        <h1>Tool Editor</h1>
+        <p>{errorMessage || 'Unable to load tool detail.'}</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+          Back to Tools
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="content-card tool-form-card">
+      <div className="card-header tool-detail-header">
+        <div>
+          <p className="eyebrow">{mode === 'edit' ? 'Edit Tool' : 'Create Tool'}</p>
+          <h1>{mode === 'edit' ? 'Update tool configuration' : 'Register a new tool'}</h1>
+          <p>Define metadata, schemas, and operational guidance for tool usage.</p>
+        </div>
+        <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+          Back to Tools
+        </button>
+      </div>
+      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      <form className="tool-form" onSubmit={handleSubmit}>
+        <label className="field">
+          <span>Name *</span>
+          <input value={form.name} onChange={updateField('name')} required />
+        </label>
+        <label className="field">
+          <span>Description *</span>
+          <textarea
+            value={form.description}
+            onChange={updateField('description')}
+            rows={3}
+            required
+          />
+        </label>
+        <div className="form-grid">
+          <label className="field">
+            <span>Tags</span>
+            <input
+              value={form.tags}
+              onChange={updateField('tags')}
+              placeholder="search, analytics"
+            />
+          </label>
+          <label className="field">
+            <span>Capability Scope</span>
+            <input
+              value={form.capabilityScope}
+              onChange={updateField('capabilityScope')}
+              placeholder="Summarize usage boundaries"
+            />
+          </label>
+          <label className="field">
+            <span>Required Fields Summary</span>
+            <input
+              value={form.requiredFieldsSummary}
+              onChange={updateField('requiredFieldsSummary')}
+            />
+          </label>
+          <label className="field">
+            <span>Common Failures</span>
+            <input
+              value={form.commonFailures}
+              onChange={updateField('commonFailures')}
+              placeholder="rate limit, missing field"
+            />
+          </label>
+        </div>
+        <div className="tool-schema-grid">
+          <label className="field">
+            <span>Parameters Schema *</span>
+            <textarea
+              className="schema-editor"
+              value={form.parametersSchema}
+              onChange={updateField('parametersSchema')}
+              rows={14}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Result Schema</span>
+            <textarea
+              className="schema-editor"
+              value={form.resultSchema}
+              onChange={updateField('resultSchema')}
+              rows={14}
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span>Input Examples (JSON array)</span>
+          <textarea
+            className="schema-editor"
+            value={form.inputExamples}
+            onChange={updateField('inputExamples')}
+            rows={8}
+          />
+        </label>
+        <div className="form-actions">
+          <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
+            Cancel
+          </button>
+          <button className="primary-action" type="submit" disabled={submitState === 'saving'}>
+            {submitState === 'saving' ? 'Saving...' : 'Save Tool'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -683,9 +985,25 @@ function AdminLayout({ role }) {
             }
           />
           <Route
+            path="/tools/new"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Operator']} role={role}>
+                <ToolFormPage mode="create" canEdit={canEdit} />
+              </RoleRoute>
+            }
+          />
+          <Route
             path="/tools/:toolId"
             element={
               <ToolDetail canEdit={canEdit} />
+            }
+          />
+          <Route
+            path="/tools/:toolId/edit"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Operator']} role={role}>
+                <ToolFormPage mode="edit" canEdit={canEdit} />
+              </RoleRoute>
             }
           />
           <Route
