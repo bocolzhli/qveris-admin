@@ -2412,6 +2412,28 @@ function AdminLayout({ role }) {
                       <span className="role-badge">Viewer</span>
                     )}
                   </div>
+                  <div className="settings-grid">
+                    <div className="settings-section">
+                      <h3>Organization</h3>
+                      <p>Company profile, workspace details, and billing contacts.</p>
+                      <div className="settings-placeholder">Organization settings coming soon.</div>
+                    </div>
+                    <div className="settings-section">
+                      <h3>Rate Limits</h3>
+                      <p>Set per-key limits, concurrency thresholds, and usage caps.</p>
+                      <div className="settings-placeholder">Rate limit configuration coming soon.</div>
+                    </div>
+                    <div className="settings-section">
+                      <h3>SLA Thresholds</h3>
+                      <p>Define latency, error rate, and uptime targets.</p>
+                      <div className="settings-placeholder">SLA thresholds coming soon.</div>
+                    </div>
+                    <div className="settings-section">
+                      <h3>Notifications</h3>
+                      <p>Configure alerting channels and escalation paths.</p>
+                      <div className="settings-placeholder">Notification settings coming soon.</div>
+                    </div>
+                  </div>
                 </div>
               </RoleRoute>
             }
