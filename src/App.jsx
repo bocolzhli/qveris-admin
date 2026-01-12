@@ -246,6 +246,7 @@ function ToolsList({ canEdit }) {
 }
 
 function EndpointsList({ canEdit }) {
+  const navigate = useNavigate()
   const [status, setStatus] = useState('active')
   const [page, setPage] = useState(1)
   const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
@@ -352,7 +353,7 @@ function EndpointsList({ canEdit }) {
           <p>Monitor endpoint health, priorities, and execution readiness.</p>
         </div>
         {canEdit ? (
-          <button className="primary-action" type="button">
+          <button className="primary-action" type="button" onClick={() => navigate('/endpoints/new')}>
             Add Endpoint
           </button>
         ) : (
@@ -403,18 +404,27 @@ function EndpointsList({ canEdit }) {
               <span className="endpoint-meta">{formatTimestamp(endpoint.last_checked_at)}</span>
               <div className="endpoint-controls">
                 {canEdit ? (
-                  <button
-                    className="ghost-action"
-                    type="button"
-                    onClick={() => updateEndpoint(endpoint.id, !endpoint.is_active)}
-                    disabled={action === 'saving'}
-                  >
-                    {action === 'saving'
-                      ? 'Saving...'
-                      : endpoint.is_active
-                        ? 'Disable'
-                        : 'Enable'}
-                  </button>
+                  <div className="endpoint-action-group">
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={() => navigate(`/endpoints/${endpoint.id}/edit`)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={() => updateEndpoint(endpoint.id, !endpoint.is_active)}
+                      disabled={action === 'saving'}
+                    >
+                      {action === 'saving'
+                        ? 'Saving...'
+                        : endpoint.is_active
+                          ? 'Disable'
+                          : 'Enable'}
+                    </button>
+                  </div>
                 ) : (
                   <span className="role-badge">Viewer</span>
                 )}
@@ -447,6 +457,299 @@ function EndpointsList({ canEdit }) {
           Next
         </button>
       </div>
+    </div>
+  )
+}
+
+function EndpointFormPage({ mode, canEdit }) {
+  const navigate = useNavigate()
+  const { endpointId } = useParams()
+  const [state, setState] = useState(mode === 'edit' ? 'loading' : 'ready')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [submitState, setSubmitState] = useState('idle')
+  const [toolsState, setToolsState] = useState('loading')
+  const [tools, setTools] = useState([])
+  const [form, setForm] = useState({
+    toolId: '',
+    toolName: '',
+    type: 'HTTP',
+    config: '{\n  \n}',
+    priority: '0',
+    isActive: true,
+    healthStatus: 'UNKNOWN',
+  })
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setToolsState('error')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch('/admin/tools?status=active&page=1&page_size=200', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load tools')
+        }
+        const payload = await response.json()
+        setTools(payload.items ?? [])
+        setToolsState('ready')
+      } catch (error) {
+        setToolsState('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (mode !== 'edit') {
+      return
+    }
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      setErrorMessage('Missing session token.')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch(`/admin/endpoints/${endpointId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load endpoint')
+        }
+        const payload = await response.json()
+        setForm({
+          toolId: payload.tool_id,
+          toolName: payload.tool_name,
+          type: payload.type,
+          config: JSON.stringify(payload.config ?? {}, null, 2),
+          priority: String(payload.priority ?? 0),
+          isActive: payload.is_active,
+          healthStatus: payload.health_status ?? 'UNKNOWN',
+        })
+        setState('ready')
+      } catch (error) {
+        setState('error')
+        setErrorMessage('Unable to load endpoint detail.')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [mode, endpointId])
+
+  useEffect(() => {
+    if (mode === 'create' && toolsState === 'ready' && tools.length && !form.toolId) {
+      setForm((prev) => ({ ...prev, toolId: tools[0].id }))
+    }
+  }, [mode, toolsState, tools, form.toolId])
+
+  const updateField = (key) => (event) => {
+    const value = event.target.value
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    if (!canEdit) {
+      return
+    }
+    setErrorMessage('')
+
+    if (mode === 'create' && !form.toolId) {
+      setErrorMessage('Select a tool for this endpoint.')
+      return
+    }
+    if (!form.priority.trim() || Number.isNaN(Number(form.priority))) {
+      setErrorMessage('Priority must be a valid number.')
+      return
+    }
+
+    let config = null
+    try {
+      config = JSON.parse(form.config)
+    } catch (error) {
+      setErrorMessage('Config must be valid JSON.')
+      return
+    }
+
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setErrorMessage('Missing session token.')
+      return
+    }
+
+    const payload =
+      mode === 'edit'
+        ? {
+            config,
+            priority: Number(form.priority),
+            is_active: form.isActive,
+          }
+        : {
+            tool_id: form.toolId,
+            type: form.type,
+            config,
+            priority: Number(form.priority),
+          }
+
+    setSubmitState('saving')
+    try {
+      const response = await fetch(
+        mode === 'edit' ? `/admin/endpoints/${endpointId}` : '/admin/endpoints',
+        {
+          method: mode === 'edit' ? 'PATCH' : 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        }
+      )
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null)
+        const errorText = detail?.detail || 'Unable to save endpoint.'
+        throw new Error(errorText)
+      }
+      await response.json()
+      navigate('/endpoints')
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to save endpoint.')
+      setSubmitState('error')
+    } finally {
+      setTimeout(() => setSubmitState('idle'), 1500)
+    }
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="content-card">
+        <h1>Access restricted</h1>
+        <p>You do not have permission to manage endpoints.</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/endpoints')}>
+          Back to Endpoints
+        </button>
+      </div>
+    )
+  }
+
+  if (state === 'loading') {
+    return (
+      <div className="content-card">
+        <p>Loading endpoint detail...</p>
+      </div>
+    )
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="content-card">
+        <h1>Endpoint Editor</h1>
+        <p>{errorMessage || 'Unable to load endpoint detail.'}</p>
+        <button className="ghost-action" type="button" onClick={() => navigate('/endpoints')}>
+          Back to Endpoints
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="content-card tool-form-card">
+      <div className="card-header tool-detail-header">
+        <div>
+          <p className="eyebrow">{mode === 'edit' ? 'Edit Endpoint' : 'Create Endpoint'}</p>
+          <h1>{mode === 'edit' ? 'Update endpoint settings' : 'Register a new endpoint'}</h1>
+          <p>Define configuration, priority, and operational state.</p>
+        </div>
+        <button className="ghost-action" type="button" onClick={() => navigate('/endpoints')}>
+          Back to Endpoints
+        </button>
+      </div>
+      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      <form className="tool-form" onSubmit={handleSubmit}>
+        {mode === 'create' ? (
+          <label className="field">
+            <span>Tool *</span>
+            <select
+              value={form.toolId}
+              onChange={updateField('toolId')}
+              disabled={toolsState !== 'ready' || tools.length === 0}
+              required
+            >
+              {toolsState === 'ready' && tools.length === 0 ? (
+                <option value="">No tools available</option>
+              ) : (
+                tools.map((tool) => (
+                  <option key={tool.id} value={tool.id}>
+                    {tool.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        ) : (
+          <label className="field">
+            <span>Tool</span>
+            <input value={form.toolName} disabled />
+          </label>
+        )}
+        <div className="form-grid">
+          <label className="field">
+            <span>Endpoint Type *</span>
+            <select value={form.type} onChange={updateField('type')} disabled={mode === 'edit'}>
+              <option value="HTTP">HTTP</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Priority *</span>
+            <input value={form.priority} onChange={updateField('priority')} required />
+          </label>
+          <label className="field">
+            <span>Health Status</span>
+            <input value={form.healthStatus} disabled />
+          </label>
+          {mode === 'edit' ? (
+            <label className="field">
+              <span>Active</span>
+              <select
+                value={form.isActive ? 'active' : 'inactive'}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, isActive: event.target.value === 'active' }))
+                }
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <label className="field">
+          <span>Config (JSON) *</span>
+          <textarea
+            className="schema-editor"
+            value={form.config}
+            onChange={updateField('config')}
+            rows={12}
+            required
+          />
+        </label>
+        <div className="form-actions">
+          <button className="ghost-action" type="button" onClick={() => navigate('/endpoints')}>
+            Cancel
+          </button>
+          <button className="primary-action" type="submit" disabled={submitState === 'saving'}>
+            {submitState === 'saving' ? 'Saving...' : 'Save Endpoint'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -1216,6 +1519,22 @@ function AdminLayout({ role }) {
             path="/endpoints"
             element={
               <EndpointsList canEdit={canEdit} />
+            }
+          />
+          <Route
+            path="/endpoints/new"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Operator']} role={role}>
+                <EndpointFormPage mode="create" canEdit={canEdit} />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/endpoints/:endpointId/edit"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Operator']} role={role}>
+                <EndpointFormPage mode="edit" canEdit={canEdit} />
+              </RoleRoute>
             }
           />
           <Route

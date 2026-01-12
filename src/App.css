@@ -285,6 +285,14 @@
   justify-content: flex-end;
 }
 
+.endpoint-action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .health-pill {
   display: inline-flex;
   align-items: center;
@@ -311,6 +319,11 @@
 .health-pill.degraded {
   background: rgba(204, 135, 42, 0.18);
   color: #9a5a19;
+}
+
+.health-pill.unknown {
+  background: rgba(12, 31, 42, 0.08);
+  color: rgba(12, 31, 42, 0.7);
 }
 
 .tool-detail {
@@ -466,7 +479,8 @@
 }
 
 .tool-form input,
-.tool-form textarea {
+.tool-form textarea,
+.tool-form select {
   border: 1px solid rgba(12, 31, 42, 0.15);
   background: #ffffff;
   color: #0b242f;
@@ -713,6 +727,15 @@
   color: #f7f5f0;
 }
 
+.field select {
+  padding: 0.6rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(247, 245, 240, 0.3);
+  background: rgba(10, 25, 33, 0.5);
+  color: #f7f5f0;
+  font-family: inherit;
+}
+
 .field textarea {
   padding: 0.6rem 0.8rem;
   border-radius: 12px;
@@ -724,6 +747,11 @@
 }
 
 .field input:focus-visible {
+  outline: 2px solid rgba(204, 90, 42, 0.8);
+  outline-offset: 2px;
+}
+
+.field select:focus-visible {
   outline: 2px solid rgba(204, 90, 42, 0.8);
   outline-offset: 2px;
 }
