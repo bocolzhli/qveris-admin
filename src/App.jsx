@@ -754,6 +754,270 @@ function EndpointFormPage({ mode, canEdit }) {
   )
 }
 
+function InvocationsList() {
+  const [state, setState] = useState('loading')
+  const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
+  const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [toolFilter, setToolFilter] = useState('all')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [tools, setTools] = useState([])
+  const [toolsState, setToolsState] = useState('loading')
+  const [summaryModal, setSummaryModal] = useState(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setToolsState('error')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const response = await fetch('/admin/tools?status=all&page=1&page_size=50', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load tools')
+        }
+        const payload = await response.json()
+        setTools(payload.items ?? [])
+        setToolsState('ready')
+      } catch (error) {
+        setToolsState('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        setState('loading')
+        const params = new URLSearchParams({
+          status: statusFilter,
+          page: String(page),
+          page_size: '10',
+        })
+        if (toolFilter !== 'all') {
+          params.set('tool_id', toolFilter)
+        }
+        if (startTime) {
+          params.set('start', new Date(startTime).toISOString())
+        }
+        if (endTime) {
+          params.set('end', new Date(endTime).toISOString())
+        }
+        const response = await fetch(`/admin/invocations?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load invocations')
+        }
+        const payload = await response.json()
+        setData(payload)
+        setState('ready')
+      } catch (error) {
+        setState('error')
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [statusFilter, toolFilter, startTime, endTime, page])
+
+  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size))
+  const helperText =
+    state === 'loading'
+      ? 'Loading invocations...'
+      : state === 'error'
+        ? 'Unable to load invocations.'
+        : `${data.total} invocations found.`
+
+  const formatTimestamp = (value) => {
+    if (!value) {
+      return '—'
+    }
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return '—'
+    }
+    return date.toLocaleString()
+  }
+
+  const handleFilterChange = (setter) => (event) => {
+    setter(event.target.value)
+    setPage(1)
+  }
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>Invocations</h1>
+          <p>Review invocation history, trace IDs, and response outcomes.</p>
+        </div>
+      </div>
+      <div className="tools-controls">
+        <div className="filter-group">
+          <label htmlFor="invocation-tool-filter">Tool</label>
+          <select
+            id="invocation-tool-filter"
+            value={toolFilter}
+            onChange={handleFilterChange(setToolFilter)}
+            disabled={toolsState !== 'ready'}
+          >
+            <option value="all">All</option>
+            {tools.map((tool) => (
+              <option key={tool.id} value={tool.id}>
+                {tool.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="filter-group">
+          <label htmlFor="invocation-status-filter">Status</label>
+          <select
+            id="invocation-status-filter"
+            value={statusFilter}
+            onChange={handleFilterChange(setStatusFilter)}
+          >
+            <option value="all">All</option>
+            <option value="success">Success</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div className="filter-group">
+          <label htmlFor="invocation-start-filter">Start</label>
+          <input
+            id="invocation-start-filter"
+            type="datetime-local"
+            value={startTime}
+            onChange={handleFilterChange(setStartTime)}
+          />
+        </div>
+        <div className="filter-group">
+          <label htmlFor="invocation-end-filter">End</label>
+          <input
+            id="invocation-end-filter"
+            type="datetime-local"
+            value={endTime}
+            onChange={handleFilterChange(setEndTime)}
+          />
+        </div>
+        <span className="helper-text">{helperText}</span>
+      </div>
+      <div className="invocations-table">
+        <div className="invocations-row invocations-head">
+          <span>Tool</span>
+          <span>Status</span>
+          <span>HTTP</span>
+          <span>Caller</span>
+          <span>Trace</span>
+          <span>Summary</span>
+          <span>Created</span>
+        </div>
+        {data.items.map((log) => (
+          <div key={log.id} className="invocations-row">
+            <span className="invocation-tool">{log.tool_name}</span>
+            <span className={`status-pill ${log.status === 'success' ? 'active' : ''}`}>
+              {log.status}
+            </span>
+            <span>{log.response_status_code}</span>
+            <span className="invocation-meta">{log.caller_id || '—'}</span>
+            <span className="invocation-meta">{log.trace_id}</span>
+            <button
+              className="summary-link"
+              type="button"
+              onClick={() => setSummaryModal(log)}
+            >
+              {log.response_summary || '—'}
+            </button>
+            <span className="invocation-meta">{formatTimestamp(log.created_at)}</span>
+          </div>
+        ))}
+        {state === 'ready' && data.items.length === 0 ? (
+          <div className="tools-empty">No invocations match this filter.</div>
+        ) : null}
+      </div>
+      <div className="pagination">
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+          disabled={page <= 1}
+        >
+          Previous
+        </button>
+        <span>
+          Page {page} of {totalPages}
+        </span>
+        <button
+          className="ghost-action"
+          type="button"
+          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+          disabled={page >= totalPages}
+        >
+          Next
+        </button>
+      </div>
+      {summaryModal ? (
+        <div className="modal-backdrop" onClick={() => setSummaryModal(null)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Invocation Summary</p>
+                <h2>{summaryModal.tool_name}</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setSummaryModal(null)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="summary-meta">
+                <div>
+                  <h4>Caller</h4>
+                  <p>{summaryModal.caller_id || '—'}</p>
+                </div>
+                <div>
+                  <h4>Trace</h4>
+                  <p>{summaryModal.trace_id || '—'}</p>
+                </div>
+                <div>
+                  <h4>Status</h4>
+                  <p>{summaryModal.status}</p>
+                </div>
+                <div>
+                  <h4>HTTP</h4>
+                  <p>{summaryModal.response_status_code}</p>
+                </div>
+              </div>
+              <div>
+                <h3>Summary</h3>
+                <pre className="summary-content">{summaryModal.response_summary || '—'}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function ToolDetail({ canEdit }) {
   const { toolId } = useParams()
   const navigate = useNavigate()
@@ -1540,10 +1804,7 @@ function AdminLayout({ role }) {
           <Route
             path="/invocations"
             element={
-              <Placeholder
-                title="Invocations"
-                description="Review invocation history, traces, and error recovery outcomes."
-              />
+              <InvocationsList />
             }
           />
           <Route
