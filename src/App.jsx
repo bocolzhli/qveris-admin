@@ -253,6 +253,7 @@ function EndpointsList({ canEdit }) {
   const [data, setData] = useState({ items: [], total: 0, page: 1, page_size: 10 })
   const [state, setState] = useState('loading')
   const [actionState, setActionState] = useState({})
+  const [disableTarget, setDisableTarget] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -442,7 +443,13 @@ function EndpointsList({ canEdit }) {
                     <button
                       className="ghost-action"
                       type="button"
-                      onClick={() => updateEndpoint(endpoint.id, !endpoint.is_active)}
+                      onClick={() => {
+                        if (endpoint.is_active) {
+                          setDisableTarget(endpoint)
+                          return
+                        }
+                        void updateEndpoint(endpoint.id, true)
+                      }}
                       disabled={action === 'saving'}
                     >
                       {action === 'saving'
@@ -484,6 +491,47 @@ function EndpointsList({ canEdit }) {
           Next
         </button>
       </div>
+      {disableTarget ? (
+        <div className="modal-backdrop" onClick={() => setDisableTarget(null)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Disable Endpoint</p>
+                <h2>{disableTarget.tool_name}</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setDisableTarget(null)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>This action disables the endpoint and stops future invocations.</p>
+              <div className="form-actions">
+                <button className="ghost-action" type="button" onClick={() => setDisableTarget(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    const target = disableTarget
+                    setDisableTarget(null)
+                    if (target) {
+                      void updateEndpoint(target.id, false)
+                    }
+                  }}
+                >
+                  Confirm Disable
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -496,6 +544,9 @@ function EndpointFormPage({ mode, canEdit }) {
   const [submitState, setSubmitState] = useState('idle')
   const [toolsState, setToolsState] = useState('loading')
   const [tools, setTools] = useState([])
+  const [originalIsActive, setOriginalIsActive] = useState(true)
+  const [confirmDisableOpen, setConfirmDisableOpen] = useState(false)
+  const [pendingPayload, setPendingPayload] = useState(null)
   const [form, setForm] = useState({
     toolId: '',
     toolName: '',
@@ -563,6 +614,7 @@ function EndpointFormPage({ mode, canEdit }) {
           isActive: payload.is_active,
           healthStatus: payload.health_status ?? 'UNKNOWN',
         })
+        setOriginalIsActive(payload.is_active)
         setState('ready')
       } catch (error) {
         setState('error')
@@ -584,50 +636,12 @@ function EndpointFormPage({ mode, canEdit }) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    if (!canEdit) {
-      return
-    }
-    setErrorMessage('')
-
-    if (mode === 'create' && !form.toolId) {
-      setErrorMessage('Select a tool for this endpoint.')
-      return
-    }
-    if (!form.priority.trim() || Number.isNaN(Number(form.priority))) {
-      setErrorMessage('Priority must be a valid number.')
-      return
-    }
-
-    let config = null
-    try {
-      config = JSON.parse(form.config)
-    } catch (error) {
-      setErrorMessage('Config must be valid JSON.')
-      return
-    }
-
+  const submitPayload = async (payload) => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
     if (!token) {
       setErrorMessage('Missing session token.')
       return
     }
-
-    const payload =
-      mode === 'edit'
-        ? {
-            config,
-            priority: Number(form.priority),
-            is_active: form.isActive,
-          }
-        : {
-            tool_id: form.toolId,
-            type: form.type,
-            config,
-            priority: Number(form.priority),
-          }
-
     setSubmitState('saving')
     try {
       const response = await fetch(
@@ -654,6 +668,53 @@ function EndpointFormPage({ mode, canEdit }) {
     } finally {
       setTimeout(() => setSubmitState('idle'), 1500)
     }
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    if (!canEdit) {
+      return
+    }
+    setErrorMessage('')
+
+    if (mode === 'create' && !form.toolId) {
+      setErrorMessage('Select a tool for this endpoint.')
+      return
+    }
+    if (!form.priority.trim() || Number.isNaN(Number(form.priority))) {
+      setErrorMessage('Priority must be a valid number.')
+      return
+    }
+
+    let config = null
+    try {
+      config = JSON.parse(form.config)
+    } catch (error) {
+      setErrorMessage('Config must be valid JSON.')
+      return
+    }
+
+    const payload =
+      mode === 'edit'
+        ? {
+            config,
+            priority: Number(form.priority),
+            is_active: form.isActive,
+          }
+        : {
+            tool_id: form.toolId,
+            type: form.type,
+            config,
+            priority: Number(form.priority),
+          }
+
+    if (mode === 'edit' && originalIsActive && !form.isActive) {
+      setPendingPayload(payload)
+      setConfirmDisableOpen(true)
+      return
+    }
+
+    await submitPayload(payload)
   }
 
   if (!canEdit) {
@@ -777,6 +838,55 @@ function EndpointFormPage({ mode, canEdit }) {
           </button>
         </div>
       </form>
+      {confirmDisableOpen ? (
+        <div className="modal-backdrop" onClick={() => setConfirmDisableOpen(false)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Disable Endpoint</p>
+                <h2>{form.toolName || 'Endpoint'}</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setConfirmDisableOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>This action disables the endpoint and stops future invocations.</p>
+              <div className="form-actions">
+                <button
+                  className="ghost-action"
+                  type="button"
+                  onClick={() => {
+                    setConfirmDisableOpen(false)
+                    setPendingPayload(null)
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    const payload = pendingPayload
+                    setConfirmDisableOpen(false)
+                    setPendingPayload(null)
+                    if (payload) {
+                      void submitPayload(payload)
+                    }
+                  }}
+                >
+                  Confirm Disable
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -1677,6 +1787,7 @@ function ToolDetail({ canEdit }) {
     isActive: true,
   })
   const [saveState, setSaveState] = useState('idle')
+  const [confirmDisableOpen, setConfirmDisableOpen] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -1728,7 +1839,7 @@ function ToolDetail({ canEdit }) {
           ? ''
           : JSON.stringify(tool.result_schema, null, 2)))
 
-  const handleSave = async () => {
+  const performSave = async () => {
     if (!tool) {
       return
     }
@@ -1795,6 +1906,14 @@ function ToolDetail({ canEdit }) {
     } finally {
       setTimeout(() => setSaveState('idle'), 1500)
     }
+  }
+
+  const handleSave = async () => {
+    if (tool?.is_active && !draft.isActive) {
+      setConfirmDisableOpen(true)
+      return
+    }
+    await performSave()
   }
 
   const resetDraft = () => {
@@ -1964,6 +2083,44 @@ function ToolDetail({ canEdit }) {
           )}
         </div>
       </div>
+      {confirmDisableOpen ? (
+        <div className="modal-backdrop" onClick={() => setConfirmDisableOpen(false)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Disable Tool</p>
+                <h2>{tool.name}</h2>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setConfirmDisableOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>This action disables the tool and blocks future invocations.</p>
+              <div className="form-actions">
+                <button className="ghost-action" type="button" onClick={() => setConfirmDisableOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    setConfirmDisableOpen(false)
+                    void performSave()
+                  }}
+                >
+                  Confirm Disable
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
