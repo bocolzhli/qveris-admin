@@ -246,6 +246,7 @@ function ToolsList({ canEdit }) {
 }
 
 function EndpointsList({ canEdit }) {
+  const refreshIntervalMs = 30000
   const navigate = useNavigate()
   const [status, setStatus] = useState('active')
   const [page, setPage] = useState(1)
@@ -260,11 +261,19 @@ function EndpointsList({ canEdit }) {
       return
     }
 
-    const controller = new AbortController()
+    let isActive = true
+    let activeController = null
 
-    const load = async () => {
+    const load = async ({ setLoading }) => {
       try {
-        setState('loading')
+        if (setLoading) {
+          setState('loading')
+        }
+        if (activeController) {
+          activeController.abort()
+        }
+        const controller = new AbortController()
+        activeController = controller
         const response = await fetch(
           `/admin/endpoints?status=${status}&page=${page}&page_size=8`,
           {
@@ -276,15 +285,33 @@ function EndpointsList({ canEdit }) {
           throw new Error('Failed to load endpoints')
         }
         const payload = await response.json()
+        if (!isActive) {
+          return
+        }
         setData(payload)
         setState('ready')
       } catch (error) {
+        if (error?.name === 'AbortError') {
+          return
+        }
+        if (!isActive) {
+          return
+        }
         setState('error')
       }
     }
 
-    void load()
-    return () => controller.abort()
+    void load({ setLoading: true })
+    const intervalId = setInterval(() => {
+      void load({ setLoading: false })
+    }, refreshIntervalMs)
+    return () => {
+      isActive = false
+      if (activeController) {
+        activeController.abort()
+      }
+      clearInterval(intervalId)
+    }
   }, [status, page])
 
   const totalPages = Math.max(1, Math.ceil(data.total / data.page_size))
