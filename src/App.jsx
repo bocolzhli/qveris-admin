@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
@@ -1136,6 +1136,116 @@ function InvocationDetail() {
   )
 }
 
+function TraceSearch() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTraceId = searchParams.get('trace_id') || ''
+  const [traceId, setTraceId] = useState(initialTraceId)
+  const [state, setState] = useState('idle')
+  const [logs, setLogs] = useState([])
+
+  const loadTrace = async (value) => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      setLogs([])
+      setState('idle')
+      return
+    }
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+    setState('loading')
+    try {
+      const response = await fetch(`/admin/traces/${encodeURIComponent(trimmed)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        throw new Error('Failed to load trace')
+      }
+      const payload = await response.json()
+      setLogs(payload.items ?? [])
+      setState('ready')
+    } catch (error) {
+      setState('error')
+    }
+  }
+
+  useEffect(() => {
+    if (initialTraceId) {
+      void loadTrace(initialTraceId)
+    }
+  }, [])
+
+  const helperText =
+    state === 'loading'
+      ? 'Loading trace...'
+      : state === 'error'
+        ? 'Unable to load trace.'
+        : logs.length
+          ? `${logs.length} invocation(s) found.`
+          : 'Enter a trace ID to search.'
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>Trace Explorer</h1>
+          <p>Search trace IDs to review invocation sequences.</p>
+        </div>
+      </div>
+      <form
+        className="trace-search"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const value = traceId.trim()
+          setSearchParams(value ? { trace_id: value } : {})
+          void loadTrace(value)
+        }}
+      >
+        <label className="field trace-field">
+          <span>Trace ID</span>
+          <input
+            value={traceId}
+            onChange={(event) => setTraceId(event.target.value)}
+            placeholder="Enter trace id"
+          />
+        </label>
+        <button className="primary-action" type="submit">
+          Search
+        </button>
+      </form>
+      <span className="helper-text">{helperText}</span>
+      {state === 'ready' && logs.length ? (
+        <div className="invocations-table">
+          <div className="invocations-row invocations-head">
+            <span>Tool</span>
+            <span>Status</span>
+            <span>HTTP</span>
+            <span>Caller</span>
+            <span>Summary</span>
+            <span>Created</span>
+          </div>
+          {logs.map((log) => (
+            <div key={log.id} className="invocations-row">
+              <span className="invocation-tool">{log.tool_name}</span>
+              <span className={`status-pill ${log.status === 'success' ? 'active' : ''}`}>
+                {log.status}
+              </span>
+              <span>{log.response_status_code}</span>
+              <span className="invocation-meta">{log.caller_id || '—'}</span>
+              <span className="invocation-summary">{log.response_summary || '—'}</span>
+              <span className="invocation-meta">{new Date(log.created_at).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      ) : state === 'ready' ? (
+        <div className="tools-empty">No invocations found for this trace.</div>
+      ) : null}
+    </div>
+  )
+}
+
 function ToolDetail({ canEdit }) {
   const { toolId } = useParams()
   const navigate = useNavigate()
@@ -1934,10 +2044,7 @@ function AdminLayout({ role }) {
           <Route
             path="/traces"
             element={
-              <Placeholder
-                title="Traces"
-                description="Explore trace timelines and drill into execution spans."
-              />
+              <TraceSearch />
             }
           />
           <Route
