@@ -247,6 +247,12 @@
   display: grid;
   gap: 0.75rem;
 }
+
+.failover-table {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
 .tools-row {
   display: grid;
   grid-template-columns: 1.2fr 0.5fr 2fr;
@@ -311,6 +317,32 @@
   border-radius: 14px;
   background: rgba(248, 246, 241, 0.9);
   border: 1px solid rgba(12, 31, 42, 0.08);
+}
+
+.failover-row {
+  display: grid;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: rgba(248, 246, 241, 0.9);
+  border: 1px solid rgba(12, 31, 42, 0.08);
+}
+
+.failover-row.is-tool {
+  grid-template-columns: 1.6fr 0.6fr 0.6fr;
+}
+
+.failover-row.is-endpoint {
+  grid-template-columns: 1.4fr 0.6fr 0.6fr 0.6fr;
+}
+
+.failover-row.failover-head {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(12, 31, 42, 0.6);
+  background: rgba(12, 31, 42, 0.05);
 }
 
 .tools-row.is-open {
@@ -984,6 +1016,10 @@
   grid-column: span 3;
 }
 
+.failover-card {
+  grid-column: span 2;
+}
+
 .widget-card {
   background: #ffffff;
   border-radius: 18px;
@@ -1151,6 +1187,10 @@
   .dashboard-hero {
     grid-column: span 2;
   }
+
+  .failover-card {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1168,6 +1208,10 @@
   }
 
   .dashboard-hero {
+    grid-column: span 1;
+  }
+
+  .failover-card {
     grid-column: span 1;
   }
 }

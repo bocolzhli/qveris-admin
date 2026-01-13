@@ -27,6 +27,8 @@ function Placeholder({ title, description }) {
 function Dashboard() {
   const [status, setStatus] = useState('loading')
   const [metrics, setMetrics] = useState(null)
+  const [failoverMetrics, setFailoverMetrics] = useState({ tools: [], endpoints: [] })
+  const [failoverState, setFailoverState] = useState('loading')
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -55,6 +57,24 @@ function Dashboard() {
     }
 
     void load()
+    const loadFailover = async () => {
+      try {
+        const response = await fetch('/admin/metrics/failover', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load failover metrics')
+        }
+        const data = await response.json()
+        setFailoverMetrics(data)
+        setFailoverState('ready')
+      } catch (error) {
+        setFailoverState('error')
+      }
+    }
+
+    void loadFailover()
     return () => controller.abort()
   }, [])
 
@@ -72,6 +92,13 @@ function Dashboard() {
       : status === 'error'
         ? 'Metrics unavailable'
         : 'Updated within the last 24 hours.'
+
+  const failoverHelper =
+    failoverState === 'loading'
+      ? 'Loading failover metrics...'
+      : failoverState === 'error'
+        ? 'Failover metrics unavailable'
+        : 'Includes retry attempts and failovers.'
 
   return (
     <div className="dashboard-grid">
@@ -108,6 +135,51 @@ function Dashboard() {
           </span>
         </div>
         <p className="metric-value">{latency}</p>
+      </div>
+      <div className="content-card failover-card">
+        <div className="card-header">
+          <div>
+            <h2>Failover Metrics</h2>
+            <p>Track retries and failovers by tool and endpoint.</p>
+          </div>
+          <span className="helper-text">{failoverHelper}</span>
+        </div>
+        <div className="failover-table">
+          <div className="failover-row failover-head is-tool">
+            <span>Tool</span>
+            <span>Retries</span>
+            <span>Failovers</span>
+          </div>
+          {failoverMetrics.tools.slice(0, 5).map((item) => (
+            <div key={item.tool_id} className="failover-row is-tool">
+              <span>{item.tool_name}</span>
+              <span>{item.retry_count}</span>
+              <span>{item.failover_count}</span>
+            </div>
+          ))}
+          {failoverState === 'ready' && failoverMetrics.tools.length === 0 ? (
+            <div className="tools-empty">No tool failovers recorded yet.</div>
+          ) : null}
+        </div>
+        <div className="failover-table">
+          <div className="failover-row failover-head is-endpoint">
+            <span>Endpoint</span>
+            <span>Priority</span>
+            <span>Retries</span>
+            <span>Failovers</span>
+          </div>
+          {failoverMetrics.endpoints.slice(0, 5).map((item) => (
+            <div key={item.endpoint_id} className="failover-row is-endpoint">
+              <span>{item.tool_name}</span>
+              <span>{item.priority}</span>
+              <span>{item.retry_count}</span>
+              <span>{item.failover_count}</span>
+            </div>
+          ))}
+          {failoverState === 'ready' && failoverMetrics.endpoints.length === 0 ? (
+            <div className="tools-empty">No endpoint failovers recorded yet.</div>
+          ) : null}
+        </div>
       </div>
     </div>
   )
