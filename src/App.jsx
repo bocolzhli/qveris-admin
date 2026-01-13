@@ -1857,6 +1857,9 @@ function ToolDetail({ canEdit }) {
     parametersText: '',
     resultText: '',
     isActive: true,
+    retryMaxAttempts: 2,
+    retryBackoffSeconds: 0,
+    failoverEnabled: true,
   })
   const [saveState, setSaveState] = useState('idle')
   const [confirmDisableOpen, setConfirmDisableOpen] = useState(false)
@@ -1890,6 +1893,9 @@ function ToolDetail({ canEdit }) {
               ? ''
               : JSON.stringify(payload.result_schema, null, 2),
           isActive: payload.is_active,
+          retryMaxAttempts: payload.retry_max_attempts ?? 2,
+          retryBackoffSeconds: payload.retry_backoff_seconds ?? 0,
+          failoverEnabled: payload.failover_enabled ?? true,
         })
         setState('ready')
       } catch (error) {
@@ -1909,7 +1915,10 @@ function ToolDetail({ canEdit }) {
       draft.resultText.trim() !==
         (tool.result_schema === null || tool.result_schema === undefined
           ? ''
-          : JSON.stringify(tool.result_schema, null, 2)))
+          : JSON.stringify(tool.result_schema, null, 2)) ||
+      Number(draft.retryMaxAttempts) !== tool.retry_max_attempts ||
+      Number(draft.retryBackoffSeconds) !== tool.retry_backoff_seconds ||
+      draft.failoverEnabled !== tool.failover_enabled)
 
   const performSave = async () => {
     if (!tool) {
@@ -1918,6 +1927,8 @@ function ToolDetail({ canEdit }) {
     setErrorMessage('')
     let parametersSchema = null
     let resultSchema = null
+    const retryMax = Number(draft.retryMaxAttempts)
+    const backoffSeconds = Number(draft.retryBackoffSeconds)
 
     try {
       if (!draft.parametersText.trim()) {
@@ -1938,6 +1949,15 @@ function ToolDetail({ canEdit }) {
       }
     }
 
+    if (!Number.isFinite(retryMax) || retryMax < 1) {
+      setErrorMessage('Retry attempts must be a number greater than 0.')
+      return
+    }
+    if (!Number.isFinite(backoffSeconds) || backoffSeconds < 0) {
+      setErrorMessage('Backoff seconds must be 0 or greater.')
+      return
+    }
+
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
     if (!token) {
       setErrorMessage('Missing session token.')
@@ -1956,6 +1976,9 @@ function ToolDetail({ canEdit }) {
           parameters_schema: parametersSchema,
           result_schema: resultSchema,
           is_active: draft.isActive,
+          retry_max_attempts: retryMax,
+          retry_backoff_seconds: backoffSeconds,
+          failover_enabled: draft.failoverEnabled,
         }),
       })
       if (!response.ok) {
@@ -1970,6 +1993,9 @@ function ToolDetail({ canEdit }) {
             ? ''
             : JSON.stringify(payload.result_schema, null, 2),
         isActive: payload.is_active,
+        retryMaxAttempts: payload.retry_max_attempts ?? 2,
+        retryBackoffSeconds: payload.retry_backoff_seconds ?? 0,
+        failoverEnabled: payload.failover_enabled ?? true,
       })
       setSaveState('saved')
     } catch (error) {
@@ -1999,6 +2025,9 @@ function ToolDetail({ canEdit }) {
           ? ''
           : JSON.stringify(tool.result_schema, null, 2),
       isActive: tool.is_active,
+      retryMaxAttempts: tool.retry_max_attempts ?? 2,
+      retryBackoffSeconds: tool.retry_backoff_seconds ?? 0,
+      failoverEnabled: tool.failover_enabled ?? true,
     })
     setErrorMessage('')
   }
@@ -2115,6 +2144,55 @@ function ToolDetail({ canEdit }) {
         <div>
           <h4>Active Endpoints</h4>
           <p>{tool.endpoints?.length ?? 0}</p>
+        </div>
+      </div>
+      <div className="tool-policy-grid">
+        <div>
+          <h4>Retry Attempts</h4>
+          {canEdit ? (
+            <input
+              type="number"
+              min="1"
+              value={draft.retryMaxAttempts}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, retryMaxAttempts: event.target.value }))
+              }
+            />
+          ) : (
+            <p>{tool.retry_max_attempts}</p>
+          )}
+        </div>
+        <div>
+          <h4>Backoff (sec)</h4>
+          {canEdit ? (
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={draft.retryBackoffSeconds}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, retryBackoffSeconds: event.target.value }))
+              }
+            />
+          ) : (
+            <p>{tool.retry_backoff_seconds}</p>
+          )}
+        </div>
+        <div>
+          <h4>Failover</h4>
+          {canEdit ? (
+            <select
+              value={draft.failoverEnabled ? 'enabled' : 'disabled'}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, failoverEnabled: event.target.value === 'enabled' }))
+              }
+            >
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          ) : (
+            <p>{tool.failover_enabled ? 'Enabled' : 'Disabled'}</p>
+          )}
         </div>
       </div>
       <div className="tool-schema-grid">
