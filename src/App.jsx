@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 const AUTH_TOKEN_KEY = 'qveris_admin_token'
@@ -1853,16 +1853,6 @@ function ToolDetail({ canEdit }) {
   const [state, setState] = useState('loading')
   const [tool, setTool] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
-  const [draft, setDraft] = useState({
-    parametersText: '',
-    resultText: '',
-    isActive: true,
-    retryMaxAttempts: 2,
-    retryBackoffSeconds: 0,
-    failoverEnabled: true,
-  })
-  const [saveState, setSaveState] = useState('idle')
-  const [confirmDisableOpen, setConfirmDisableOpen] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -1871,12 +1861,9 @@ function ToolDetail({ canEdit }) {
       setErrorMessage('Missing session token.')
       return
     }
-
     const controller = new AbortController()
-
     const load = async () => {
       try {
-        setState('loading')
         const response = await fetch(`/admin/tools/${toolId}`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
@@ -1886,150 +1873,32 @@ function ToolDetail({ canEdit }) {
         }
         const payload = await response.json()
         setTool(payload)
-        setDraft({
-          parametersText: JSON.stringify(payload.parameters_schema, null, 2),
-          resultText:
-            payload.result_schema === null || payload.result_schema === undefined
-              ? ''
-              : JSON.stringify(payload.result_schema, null, 2),
-          isActive: payload.is_active,
-          retryMaxAttempts: payload.retry_max_attempts ?? 2,
-          retryBackoffSeconds: payload.retry_backoff_seconds ?? 0,
-          failoverEnabled: payload.failover_enabled ?? true,
-        })
         setState('ready')
       } catch (error) {
         setState('error')
         setErrorMessage('Unable to load tool detail.')
       }
     }
-
     void load()
     return () => controller.abort()
   }, [toolId])
 
-  const hasChanges =
-    tool &&
-    (draft.isActive !== tool.is_active ||
-      draft.parametersText.trim() !== JSON.stringify(tool.parameters_schema, null, 2) ||
-      draft.resultText.trim() !==
-        (tool.result_schema === null || tool.result_schema === undefined
-          ? ''
-          : JSON.stringify(tool.result_schema, null, 2)) ||
-      Number(draft.retryMaxAttempts) !== tool.retry_max_attempts ||
-      Number(draft.retryBackoffSeconds) !== tool.retry_backoff_seconds ||
-      draft.failoverEnabled !== tool.failover_enabled)
-
-  const performSave = async () => {
-    if (!tool) {
-      return
+  const formatTimestamp = (value) => {
+    if (!value) {
+      return '—'
     }
-    setErrorMessage('')
-    let parametersSchema = null
-    let resultSchema = null
-    const retryMax = Number(draft.retryMaxAttempts)
-    const backoffSeconds = Number(draft.retryBackoffSeconds)
-
-    try {
-      if (!draft.parametersText.trim()) {
-        throw new Error('Parameters schema is required.')
-      }
-      parametersSchema = JSON.parse(draft.parametersText)
-    } catch (error) {
-      setErrorMessage('Parameters schema must be valid JSON.')
-      return
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return '—'
     }
-
-    if (draft.resultText.trim()) {
-      try {
-        resultSchema = JSON.parse(draft.resultText)
-      } catch (error) {
-        setErrorMessage('Result schema must be valid JSON.')
-        return
-      }
-    }
-
-    if (!Number.isFinite(retryMax) || retryMax < 1) {
-      setErrorMessage('Retry attempts must be a number greater than 0.')
-      return
-    }
-    if (!Number.isFinite(backoffSeconds) || backoffSeconds < 0) {
-      setErrorMessage('Backoff seconds must be 0 or greater.')
-      return
-    }
-
-    const token = localStorage.getItem(AUTH_TOKEN_KEY)
-    if (!token) {
-      setErrorMessage('Missing session token.')
-      return
-    }
-
-    setSaveState('saving')
-    try {
-      const response = await fetch(`/admin/tools/${tool.id}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          parameters_schema: parametersSchema,
-          result_schema: resultSchema,
-          is_active: draft.isActive,
-          retry_max_attempts: retryMax,
-          retry_backoff_seconds: backoffSeconds,
-          failover_enabled: draft.failoverEnabled,
-        }),
-      })
-      if (!response.ok) {
-        throw new Error('Failed to update tool')
-      }
-      const payload = await response.json()
-      setTool(payload)
-      setDraft({
-        parametersText: JSON.stringify(payload.parameters_schema, null, 2),
-        resultText:
-          payload.result_schema === null || payload.result_schema === undefined
-            ? ''
-            : JSON.stringify(payload.result_schema, null, 2),
-        isActive: payload.is_active,
-        retryMaxAttempts: payload.retry_max_attempts ?? 2,
-        retryBackoffSeconds: payload.retry_backoff_seconds ?? 0,
-        failoverEnabled: payload.failover_enabled ?? true,
-      })
-      setSaveState('saved')
-    } catch (error) {
-      setSaveState('error')
-      setErrorMessage('Unable to save changes.')
-    } finally {
-      setTimeout(() => setSaveState('idle'), 1500)
-    }
+    return date.toLocaleString()
   }
 
-  const handleSave = async () => {
-    if (tool?.is_active && !draft.isActive) {
-      setConfirmDisableOpen(true)
-      return
+  const statusLabel = (value) => {
+    if (!value) {
+      return '—'
     }
-    await performSave()
-  }
-
-  const resetDraft = () => {
-    if (!tool) {
-      return
-    }
-    setDraft({
-      parametersText: JSON.stringify(tool.parameters_schema, null, 2),
-      resultText:
-        tool.result_schema === null || tool.result_schema === undefined
-          ? ''
-          : JSON.stringify(tool.result_schema, null, 2),
-      isActive: tool.is_active,
-      retryMaxAttempts: tool.retry_max_attempts ?? 2,
-      retryBackoffSeconds: tool.retry_backoff_seconds ?? 0,
-      failoverEnabled: tool.failover_enabled ?? true,
-    })
-    setErrorMessage('')
+    return value.charAt(0).toUpperCase() + value.slice(1)
   }
 
   if (state === 'loading') {
@@ -2057,7 +1926,7 @@ function ToolDetail({ canEdit }) {
       <div className="card-header tool-detail-header">
         <div>
           <p className="eyebrow">Tool Detail</p>
-          <h1>{tool.name}</h1>
+          <h1>{tool.title}</h1>
           <p>{tool.description}</p>
         </div>
         <div className="tool-detail-actions">
@@ -2066,211 +1935,140 @@ function ToolDetail({ canEdit }) {
           </button>
           {canEdit ? (
             <button
-              className="ghost-action"
+              className="primary-action"
               type="button"
               onClick={() => navigate(`/tools/${tool.id}/edit`)}
             >
               Edit Tool
-            </button>
-          ) : null}
-          {canEdit ? (
-            <button
-              className="primary-action"
-              type="button"
-              onClick={handleSave}
-              disabled={!hasChanges || saveState === 'saving'}
-            >
-              {saveState === 'saving' ? 'Saving...' : 'Save Changes'}
             </button>
           ) : (
             <span className="role-badge">Viewer</span>
           )}
         </div>
       </div>
-      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
-      {!tool.is_active ? (
-        <div className="status-banner">
-          Tool is disabled. Invocations are blocked until it is re-enabled.
-        </div>
-      ) : null}
       <div className="tool-status-row">
-        <span className={tool.is_active ? 'status-pill active' : 'status-pill'}>
-          {tool.is_active ? 'Active' : 'Inactive'}
+        <span className={tool.status === 'active' ? 'status-pill active' : 'status-pill'}>
+          {statusLabel(tool.status)}
         </span>
-        <label className={`toggle ${!canEdit ? 'is-disabled' : ''}`}>
-          <input
-            type="checkbox"
-            checked={draft.isActive}
-            disabled={!canEdit}
-            onChange={(event) =>
-              setDraft((prev) => ({
-                ...prev,
-                isActive: event.target.checked,
-              }))
-            }
-          />
-          <span className="toggle-track">
-            <span className="toggle-thumb" />
-          </span>
-          <span>{draft.isActive ? 'Enabled' : 'Disabled'}</span>
-        </label>
-        {canEdit ? (
-          <button className="ghost-action" type="button" onClick={resetDraft} disabled={!hasChanges}>
-            Discard
-          </button>
-        ) : null}
+        <span className="tool-status-meta">Version {tool.version}</span>
       </div>
       <div className="tool-meta-grid">
+        <div>
+          <h4>Tool ID</h4>
+          <p>{tool.tool_id}</p>
+        </div>
+        <div>
+          <h4>Created</h4>
+          <p>{formatTimestamp(tool.created_at)}</p>
+        </div>
+        <div>
+          <h4>Updated</h4>
+          <p>{formatTimestamp(tool.updated_at)}</p>
+        </div>
+        <div>
+          <h4>Failover</h4>
+          <p>{tool.failover_enabled ? 'Enabled' : 'Disabled'}</p>
+        </div>
+        <div>
+          <h4>Retry Attempts</h4>
+          <p>{tool.retry_max_attempts}</p>
+        </div>
+        <div>
+          <h4>Backoff (sec)</h4>
+          <p>{tool.retry_backoff_seconds}</p>
+        </div>
         <div>
           <h4>Tags</h4>
           <p>{tool.tags?.length ? tool.tags.join(', ') : '—'}</p>
         </div>
         <div>
-          <h4>Capability Scope</h4>
-          <p>{tool.capability_scope || '—'}</p>
-        </div>
-        <div>
-          <h4>Required Fields</h4>
-          <p>{tool.required_fields_summary || '—'}</p>
-        </div>
-        <div>
-          <h4>Common Failures</h4>
-          <p>{tool.common_failures?.length ? tool.common_failures.join(', ') : '—'}</p>
-        </div>
-        <div>
-          <h4>Input Examples</h4>
-          <p>{tool.input_examples?.length ? `${tool.input_examples.length} samples` : '—'}</p>
-        </div>
-        <div>
-          <h4>Active Endpoints</h4>
+          <h4>Endpoints</h4>
           <p>{tool.endpoints?.length ?? 0}</p>
         </div>
       </div>
-      <div className="tool-policy-grid">
-        <div>
-          <h4>Retry Attempts</h4>
-          {canEdit ? (
-            <input
-              type="number"
-              min="1"
-              value={draft.retryMaxAttempts}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, retryMaxAttempts: event.target.value }))
-              }
-            />
-          ) : (
-            <p>{tool.retry_max_attempts}</p>
-          )}
+      <div className="invocation-detail-grid">
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Use Cases</h3>
+          </div>
+          <pre className="summary-content">
+            {tool.use_cases?.length ? tool.use_cases.join('\n') : '—'}
+          </pre>
         </div>
-        <div>
-          <h4>Backoff (sec)</h4>
-          {canEdit ? (
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={draft.retryBackoffSeconds}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, retryBackoffSeconds: event.target.value }))
-              }
-            />
-          ) : (
-            <p>{tool.retry_backoff_seconds}</p>
-          )}
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Constraints</h3>
+          </div>
+          <pre className="summary-content">
+            {tool.constraints?.length ? tool.constraints.join('\n') : '—'}
+          </pre>
         </div>
-        <div>
-          <h4>Failover</h4>
-          {canEdit ? (
-            <select
-              value={draft.failoverEnabled ? 'enabled' : 'disabled'}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, failoverEnabled: event.target.value === 'enabled' }))
-              }
-            >
-              <option value="enabled">Enabled</option>
-              <option value="disabled">Disabled</option>
-            </select>
-          ) : (
-            <p>{tool.failover_enabled ? 'Enabled' : 'Disabled'}</p>
-          )}
+      </div>
+      <div className="invocation-detail-grid">
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Capabilities</h3>
+          </div>
+          <pre className="summary-content">
+            {tool.capabilities?.length
+              ? JSON.stringify(tool.capabilities, null, 2)
+              : '[]'}
+          </pre>
+        </div>
+        <div className="detail-panel">
+          <div className="detail-panel-header">
+            <h3>Examples</h3>
+          </div>
+          <pre className="summary-content">
+            {tool.examples?.length ? JSON.stringify(tool.examples, null, 2) : '[]'}
+          </pre>
         </div>
       </div>
       <div className="tool-schema-grid">
         <div>
-          <h3>Parameters Schema</h3>
-          {canEdit ? (
-            <textarea
-              className="schema-editor"
-              value={draft.parametersText}
-              onChange={(event) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  parametersText: event.target.value,
-                }))
-              }
-              rows={14}
-            />
-          ) : (
-            <pre>{JSON.stringify(tool.parameters_schema, null, 2)}</pre>
-          )}
+          <h3>Input Schema</h3>
+          <pre>{JSON.stringify(tool.input ?? {}, null, 2)}</pre>
         </div>
         <div>
-          <h3>Result Schema</h3>
-          {canEdit ? (
-            <textarea
-              className="schema-editor"
-              value={draft.resultText}
-              onChange={(event) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  resultText: event.target.value,
-                }))
-              }
-              rows={14}
-            />
-          ) : (
-            <pre>{JSON.stringify(tool.result_schema, null, 2)}</pre>
-          )}
+          <h3>Output Schema</h3>
+          <pre>{JSON.stringify(tool.output ?? {}, null, 2)}</pre>
+        </div>
+        <div>
+          <h3>Execution Config</h3>
+          <pre>{JSON.stringify(tool.execution ?? {}, null, 2)}</pre>
         </div>
       </div>
-      {confirmDisableOpen ? (
-        <div className="modal-backdrop" onClick={() => setConfirmDisableOpen(false)}>
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">Disable Tool</p>
-                <h2>{tool.name}</h2>
-              </div>
-              <button className="ghost-action" type="button" onClick={() => setConfirmDisableOpen(false)}>
-                Close
-              </button>
+      <div className="tool-endpoints">
+        <h3>Registered Endpoints</h3>
+        {tool.endpoints?.length ? (
+          <div className="endpoints-table">
+            <div className="endpoints-row endpoints-head">
+              <span>Type</span>
+              <span>Status</span>
+              <span>Priority</span>
+              <span>Weight</span>
+              <span>Health</span>
+              <span>Last Checked</span>
             </div>
-            <div className="modal-body">
-              <p>This action disables the tool and blocks future invocations.</p>
-              <div className="form-actions">
-                <button className="ghost-action" type="button" onClick={() => setConfirmDisableOpen(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="primary-action"
-                  type="button"
-                  onClick={() => {
-                    setConfirmDisableOpen(false)
-                    void performSave()
-                  }}
-                >
-                  Confirm Disable
-                </button>
+            {tool.endpoints.map((endpoint) => (
+              <div key={endpoint.id} className="endpoints-row">
+                <span>{endpoint.type}</span>
+                <span className={endpoint.is_active ? 'status-pill active' : 'status-pill'}>
+                  {endpoint.is_active ? 'Active' : 'Inactive'}
+                </span>
+                <span>{endpoint.priority}</span>
+                <span>{endpoint.weight}</span>
+                <span className={`health-pill ${String(endpoint.health_status).toLowerCase()}`}>
+                  {endpoint.health_status}
+                </span>
+                <span className="endpoint-meta">{formatTimestamp(endpoint.last_checked_at)}</span>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <div className="tools-empty">No endpoints registered yet.</div>
+        )}
+      </div>
     </div>
   )
 }
@@ -2282,16 +2080,42 @@ function ToolFormPage({ mode, canEdit }) {
   const [errorMessage, setErrorMessage] = useState('')
   const [submitState, setSubmitState] = useState('idle')
   const [form, setForm] = useState({
-    name: '',
+    toolId: '',
+    version: '1.0.0',
+    status: 'active',
+    title: '',
     description: '',
-    tags: '',
-    capabilityScope: '',
-    parametersSchema: '{\n  \n}',
-    resultSchema: '',
-    inputExamples: '',
-    requiredFieldsSummary: '',
-    commonFailures: '',
+    tagsText: '',
+    useCasesText: '',
+    constraintsText: '',
+    capabilitiesText: '[]',
+    examplesText: '[]',
+    inputText: '{}',
+    outputText: '{}',
+    executionText: '{}',
+    retryMaxAttempts: '2',
+    retryBackoffSeconds: '0',
+    failoverEnabled: 'enabled',
   })
+
+  const formatToolToForm = useCallback((data) => ({
+    toolId: data.tool_id ?? '',
+    version: data.version ?? '',
+    status: data.status ?? 'active',
+    title: data.title ?? '',
+    description: data.description ?? '',
+    tagsText: (data.tags ?? []).join(', '),
+    useCasesText: (data.use_cases ?? []).join('\n'),
+    constraintsText: (data.constraints ?? []).join('\n'),
+    capabilitiesText: JSON.stringify(data.capabilities ?? [], null, 2),
+    examplesText: JSON.stringify(data.examples ?? [], null, 2),
+    inputText: JSON.stringify(data.input ?? {}, null, 2),
+    outputText: JSON.stringify(data.output ?? {}, null, 2),
+    executionText: JSON.stringify(data.execution ?? {}, null, 2),
+    retryMaxAttempts: String(data.retry_max_attempts ?? 2),
+    retryBackoffSeconds: String(data.retry_backoff_seconds ?? 0),
+    failoverEnabled: data.failover_enabled ? 'enabled' : 'disabled',
+  }), [])
 
   useEffect(() => {
     if (mode !== 'edit') {
@@ -2314,23 +2138,7 @@ function ToolFormPage({ mode, canEdit }) {
           throw new Error('Failed to load tool')
         }
         const payload = await response.json()
-        setForm({
-          name: payload.name ?? '',
-          description: payload.description ?? '',
-          tags: payload.tags?.join(', ') ?? '',
-          capabilityScope: payload.capability_scope ?? '',
-          parametersSchema: JSON.stringify(payload.parameters_schema, null, 2),
-          resultSchema:
-            payload.result_schema === null || payload.result_schema === undefined
-              ? ''
-              : JSON.stringify(payload.result_schema, null, 2),
-          inputExamples:
-            payload.input_examples === null || payload.input_examples === undefined
-              ? ''
-              : JSON.stringify(payload.input_examples, null, 2),
-          requiredFieldsSummary: payload.required_fields_summary ?? '',
-          commonFailures: payload.common_failures?.join(', ') ?? '',
-        })
+        setForm(formatToolToForm(payload))
         setState('ready')
       } catch (error) {
         setState('error')
@@ -2339,22 +2147,63 @@ function ToolFormPage({ mode, canEdit }) {
     }
     void load()
     return () => controller.abort()
-  }, [mode, toolId])
+  }, [mode, toolId, formatToolToForm])
 
   const updateField = (key) => (event) => {
     const value = event.target.value
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const parseJsonField = (value, fieldLabel, allowEmpty) => {
-    if (allowEmpty && !value.trim()) {
-      return null
+  const parseCommaSeparated = (value) =>
+    value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+
+  const parseLineSeparated = (value) =>
+    value
+      .split('\n')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+
+  const parseJsonField = (value, label, allowEmpty, emptyValue) => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      if (allowEmpty) {
+        return emptyValue
+      }
+      throw new Error(`${label} is required.`)
     }
     try {
-      return JSON.parse(value)
+      return JSON.parse(trimmed)
     } catch (error) {
-      throw new Error(`${fieldLabel} must be valid JSON.`)
+      throw new Error(`${label} must be valid JSON.`)
     }
+  }
+
+  const ensureArray = (value, label) => {
+    if (!Array.isArray(value)) {
+      throw new Error(`${label} must be a JSON array.`)
+    }
+    return value
+  }
+
+  const ensureObject = (value, label) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`${label} must be a JSON object.`)
+    }
+    return value
+  }
+
+  const parseNumberField = (value, label, minimum) => {
+    const number = Number(value)
+    if (!Number.isFinite(number)) {
+      throw new Error(`${label} must be a number.`)
+    }
+    if (minimum !== undefined && number < minimum) {
+      throw new Error(`${label} must be at least ${minimum}.`)
+    }
+    return number
   }
 
   const handleSubmit = async (event) => {
@@ -2363,43 +2212,82 @@ function ToolFormPage({ mode, canEdit }) {
       return
     }
     setErrorMessage('')
-    if (!form.name.trim() || !form.description.trim()) {
-      setErrorMessage('Name and description are required.')
+
+    if (mode === 'create' && !form.toolId.trim()) {
+      setErrorMessage('Tool ID is required.')
+      return
+    }
+    if (!form.title.trim() || !form.description.trim()) {
+      setErrorMessage('Title and description are required.')
+      return
+    }
+    if (!form.version.trim()) {
+      setErrorMessage('Version is required.')
       return
     }
 
-    let parametersSchema = null
-    let resultSchema = null
-    let inputExamples = null
+    let capabilities = []
+    let examples = []
+    let inputSchema = {}
+    let outputSchema = {}
+    let executionConfig = {}
+
     try {
-      parametersSchema = parseJsonField(form.parametersSchema, 'Parameters schema', false)
-      resultSchema = parseJsonField(form.resultSchema, 'Result schema', true)
-      inputExamples = parseJsonField(form.inputExamples, 'Input examples', true)
+      capabilities = ensureArray(
+        parseJsonField(form.capabilitiesText, 'Capabilities', true, []),
+        'Capabilities'
+      )
+      examples = ensureArray(
+        parseJsonField(form.examplesText, 'Examples', true, []),
+        'Examples'
+      )
+      inputSchema = ensureObject(
+        parseJsonField(form.inputText, 'Input schema', false),
+        'Input schema'
+      )
+      outputSchema = ensureObject(
+        parseJsonField(form.outputText, 'Output schema', false),
+        'Output schema'
+      )
+      executionConfig = ensureObject(
+        parseJsonField(form.executionText, 'Execution config', false),
+        'Execution config'
+      )
+    } catch (error) {
+      setErrorMessage(error.message)
+      return
+    }
+
+    let retryMax = 0
+    let backoffSeconds = 0
+    try {
+      retryMax = parseNumberField(form.retryMaxAttempts, 'Retry attempts', 1)
+      backoffSeconds = parseNumberField(form.retryBackoffSeconds, 'Retry backoff seconds', 0)
     } catch (error) {
       setErrorMessage(error.message)
       return
     }
 
     const payload = {
-      name: form.name.trim(),
+      version: form.version.trim(),
+      status: form.status,
+      title: form.title.trim(),
       description: form.description.trim(),
-      tags: form.tags.trim()
-        ? form.tags
-            .split(',')
-            .map((entry) => entry.trim())
-            .filter(Boolean)
-        : null,
-      parameters_schema: parametersSchema,
-      result_schema: resultSchema,
-      capability_scope: form.capabilityScope.trim() || null,
-      input_examples: inputExamples,
-      required_fields_summary: form.requiredFieldsSummary.trim() || null,
-      common_failures: form.commonFailures.trim()
-        ? form.commonFailures
-            .split(',')
-            .map((entry) => entry.trim())
-            .filter(Boolean)
-        : null,
+      tags: parseCommaSeparated(form.tagsText),
+      use_cases: parseLineSeparated(form.useCasesText),
+      constraints: parseLineSeparated(form.constraintsText),
+      capabilities,
+      examples,
+      input: inputSchema,
+      output: outputSchema,
+      execution: executionConfig,
+      retry_max_attempts: retryMax,
+      retry_backoff_seconds: backoffSeconds,
+      failover_enabled: form.failoverEnabled === 'enabled',
+    }
+
+    if (mode === 'create') {
+      payload.tool_id = form.toolId.trim()
     }
 
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -2480,9 +2368,32 @@ function ToolFormPage({ mode, canEdit }) {
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
       <form className="tool-form" onSubmit={handleSubmit}>
         <label className="field">
-          <span>Name *</span>
-          <input value={form.name} onChange={updateField('name')} required />
+          <span>Tool ID *</span>
+          <input
+            value={form.toolId}
+            onChange={updateField('toolId')}
+            required={mode === 'create'}
+            disabled={mode === 'edit'}
+          />
         </label>
+        <div className="form-grid">
+          <label className="field">
+            <span>Title *</span>
+            <input value={form.title} onChange={updateField('title')} required />
+          </label>
+          <label className="field">
+            <span>Version *</span>
+            <input value={form.version} onChange={updateField('version')} required />
+          </label>
+          <label className="field">
+            <span>Status *</span>
+            <select value={form.status} onChange={updateField('status')}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="deprecated">Deprecated</option>
+            </select>
+          </label>
+        </div>
         <label className="field">
           <span>Description *</span>
           <textarea
@@ -2494,67 +2405,104 @@ function ToolFormPage({ mode, canEdit }) {
         </label>
         <div className="form-grid">
           <label className="field">
-            <span>Tags</span>
-            <input
-              value={form.tags}
-              onChange={updateField('tags')}
-              placeholder="search, analytics"
-            />
+            <span>Tags (comma separated)</span>
+            <input value={form.tagsText} onChange={updateField('tagsText')} />
           </label>
           <label className="field">
-            <span>Capability Scope</span>
+            <span>Retry Attempts *</span>
             <input
-              value={form.capabilityScope}
-              onChange={updateField('capabilityScope')}
-              placeholder="Summarize usage boundaries"
-            />
-          </label>
-          <label className="field">
-            <span>Required Fields Summary</span>
-            <input
-              value={form.requiredFieldsSummary}
-              onChange={updateField('requiredFieldsSummary')}
-            />
-          </label>
-          <label className="field">
-            <span>Common Failures</span>
-            <input
-              value={form.commonFailures}
-              onChange={updateField('commonFailures')}
-              placeholder="rate limit, missing field"
-            />
-          </label>
-        </div>
-        <div className="tool-schema-grid">
-          <label className="field">
-            <span>Parameters Schema *</span>
-            <textarea
-              className="schema-editor"
-              value={form.parametersSchema}
-              onChange={updateField('parametersSchema')}
-              rows={14}
+              type="number"
+              min="1"
+              value={form.retryMaxAttempts}
+              onChange={updateField('retryMaxAttempts')}
               required
             />
           </label>
           <label className="field">
-            <span>Result Schema</span>
-            <textarea
-              className="schema-editor"
-              value={form.resultSchema}
-              onChange={updateField('resultSchema')}
-              rows={14}
+            <span>Retry Backoff Seconds *</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={form.retryBackoffSeconds}
+              onChange={updateField('retryBackoffSeconds')}
+              required
             />
+          </label>
+          <label className="field">
+            <span>Failover</span>
+            <select value={form.failoverEnabled} onChange={updateField('failoverEnabled')}>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
           </label>
         </div>
         <label className="field">
-          <span>Input Examples (JSON array)</span>
+          <span>Use Cases (one per line)</span>
+          <textarea
+            value={form.useCasesText}
+            onChange={updateField('useCasesText')}
+            rows={4}
+          />
+        </label>
+        <label className="field">
+          <span>Constraints (one per line)</span>
+          <textarea
+            value={form.constraintsText}
+            onChange={updateField('constraintsText')}
+            rows={4}
+          />
+        </label>
+        <label className="field">
+          <span>Capabilities (JSON array)</span>
           <textarea
             className="schema-editor"
-            value={form.inputExamples}
-            onChange={updateField('inputExamples')}
+            value={form.capabilitiesText}
+            onChange={updateField('capabilitiesText')}
             rows={8}
           />
         </label>
+        <label className="field">
+          <span>Examples (JSON array)</span>
+          <textarea
+            className="schema-editor"
+            value={form.examplesText}
+            onChange={updateField('examplesText')}
+            rows={8}
+          />
+        </label>
+        <div className="tool-schema-grid">
+          <label className="field">
+            <span>Input Schema (JSON object) *</span>
+            <textarea
+              className="schema-editor"
+              value={form.inputText}
+              onChange={updateField('inputText')}
+              rows={12}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Output Schema (JSON object) *</span>
+            <textarea
+              className="schema-editor"
+              value={form.outputText}
+              onChange={updateField('outputText')}
+              rows={12}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Execution Config (JSON object) *</span>
+            <textarea
+              className="schema-editor"
+              value={form.executionText}
+              onChange={updateField('executionText')}
+              rows={12}
+              required
+            />
+          </label>
+        </div>
         <div className="form-actions">
           <button className="ghost-action" type="button" onClick={() => navigate('/tools')}>
             Cancel
