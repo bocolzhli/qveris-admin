@@ -2213,10 +2213,6 @@ function ToolFormPage({ mode, canEdit }) {
     }
     setErrorMessage('')
 
-    if (mode === 'create' && !form.toolId.trim()) {
-      setErrorMessage('Tool ID is required.')
-      return
-    }
     if (!form.title.trim() || !form.description.trim()) {
       setErrorMessage('Title and description are required.')
       return
@@ -2284,10 +2280,6 @@ function ToolFormPage({ mode, canEdit }) {
       retry_max_attempts: retryMax,
       retry_backoff_seconds: backoffSeconds,
       failover_enabled: form.failoverEnabled === 'enabled',
-    }
-
-    if (mode === 'create') {
-      payload.tool_id = form.toolId.trim()
     }
 
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -2367,15 +2359,12 @@ function ToolFormPage({ mode, canEdit }) {
       </div>
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
       <form className="tool-form" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Tool ID *</span>
-          <input
-            value={form.toolId}
-            onChange={updateField('toolId')}
-            required={mode === 'create'}
-            disabled={mode === 'edit'}
-          />
-        </label>
+        {mode === 'edit' ? (
+          <label className="field">
+            <span>Tool ID</span>
+            <input value={form.toolId} disabled />
+          </label>
+        ) : null}
         <div className="form-grid">
           <label className="field">
             <span>Title *</span>
