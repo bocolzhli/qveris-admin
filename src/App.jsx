@@ -2509,6 +2509,15 @@ function ToolFormPage({ mode, canEdit }) {
 function ConfigList() {
   const [state, setState] = useState('loading')
   const [items, setItems] = useState([])
+  const [editTarget, setEditTarget] = useState(null)
+  const [editForm, setEditForm] = useState({
+    value: '',
+    title: '',
+    description: '',
+    validation: '',
+  })
+  const [editState, setEditState] = useState('idle')
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
@@ -2548,6 +2557,85 @@ function ConfigList() {
         ? 'Unable to load configuration.'
         : `${items.length} config items.`
 
+  const handleEdit = (item) => {
+    setEditTarget(item)
+    setEditForm({
+      value: typeof item.value === 'string' ? item.value : JSON.stringify(item.value, null, 2),
+      title: item.title,
+      description: item.description,
+      validation: item.validation ? JSON.stringify(item.validation, null, 2) : '{}',
+    })
+    setEditError('')
+    setEditState('idle')
+  }
+
+  const handleEditSave = async () => {
+    if (!editTarget) return
+    setEditState('saving')
+    setEditError('')
+    let parsedValue = editForm.value
+    let parsedValidation = {}
+    // 尝试解析 value 为 JSON
+    try {
+      parsedValue = JSON.parse(editForm.value)
+    } catch (e) {
+      // 如果原本是字符串，允许直接保存
+      if (typeof editTarget.value !== 'string') {
+        setEditError('Value must be valid JSON format')
+        setEditState('error')
+        return
+      }
+    }
+    // 解析 validation
+    try {
+      parsedValidation = JSON.parse(editForm.validation)
+    } catch (e) {
+      setEditError('Validation must be valid JSON format')
+      setEditState('error')
+      return
+    }
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setEditError('Not logged in')
+      setEditState('error')
+      return
+    }
+    try {
+      const response = await fetch(`/admin/config/${encodeURIComponent(editTarget.key)}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          value: parsedValue,
+          title: editForm.title,
+          description: editForm.description,
+          validation: parsedValidation,
+        }),
+      })
+      if (!response.ok) {
+        throw new Error('Save failed')
+      }
+      // 更新本地 items
+      const updated = items.map((item) =>
+        item.key === editTarget.key ? {
+          ...item,
+          value: parsedValue,
+          title: editForm.title,
+          description: editForm.description,
+          validation: parsedValidation,
+        } : item
+      )
+      setItems(updated)
+      setEditTarget(null)
+      setEditState('idle')
+    } catch (e) {
+      setEditError('Save failed')
+      setEditState('error')
+    }
+  }
+
   const formatValue = (value) => {
     if (value === null || value === undefined) {
       return '—'
@@ -2580,6 +2668,7 @@ function ConfigList() {
           <span>Value</span>
           <span>Description</span>
           <span>Validation</span>
+          <span>操作</span>
         </div>
         {items.map((item) => (
           <div className="config-row" key={item.key}>
@@ -2594,12 +2683,88 @@ function ConfigList() {
             <div className="config-cell">
               <pre className="summary-content config-json">{formatValidation(item.validation)}</pre>
             </div>
+            <div className="config-cell">
+              <button className="ghost-action" type="button" onClick={() => handleEdit(item)}>
+                编辑
+              </button>
+            </div>
           </div>
         ))}
         {state === 'ready' && items.length === 0 ? (
           <div className="config-empty">No config items available yet.</div>
         ) : null}
       </div>
+      {editTarget ? (
+        <div className="modal-backdrop" onClick={() => setEditTarget(null)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+            style={{ minWidth: 400, maxWidth: 600 }}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">编辑配置项</p>
+                <h2>{editTarget.title}</h2>
+                <div className="config-key">{editTarget.key}</div>
+              </div>
+              <button className="ghost-action" type="button" onClick={() => setEditTarget(null)}>
+                关闭
+              </button>
+            </div>
+            <div className="modal-body">
+              <label className="field">
+                <span>Title</span>
+                <input
+                  value={editForm.title}
+                  onChange={e => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>Description</span>
+                <textarea
+                  value={editForm.description}
+                  onChange={e => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                  rows={3}
+                />
+              </label>
+              <label className="field">
+                <span>Value</span>
+                <textarea
+                  className="schema-editor"
+                  value={editForm.value}
+                  onChange={e => setEditForm(prev => ({ ...prev, value: e.target.value }))}
+                  rows={6}
+                />
+              </label>
+              <label className="field">
+                <span>Validation (JSON)</span>
+                <textarea
+                  className="schema-editor"
+                  value={editForm.validation}
+                  onChange={e => setEditForm(prev => ({ ...prev, validation: e.target.value }))}
+                  rows={4}
+                />
+              </label>
+              {editError ? <div className="form-error">{editError}</div> : null}
+              <div className="form-actions">
+                <button className="ghost-action" type="button" onClick={() => setEditTarget(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  disabled={editState === 'saving'}
+                  onClick={handleEditSave}
+                >
+                  {editState === 'saving' ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
