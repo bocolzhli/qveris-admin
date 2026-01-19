@@ -19,3 +19,8 @@ test('admin config page fetches config list', async () => {
   const app = await readApp()
   assert.match(app, /\/admin\/config/)
 })
+
+test('admin config rows use high-contrast text color', async () => {
+  const css = await readFile(path.join(repoRoot, 'src', 'App.css'), 'utf8')
+  assert.match(css, /\.config-row\s*\{[^}]*color:\s*rgba\(236,\s*244,\s*251,\s*0\.92\)/)
+})
