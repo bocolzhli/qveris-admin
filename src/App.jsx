@@ -12,6 +12,7 @@ const navItems = [
   { label: 'Traces', path: '/traces' },
   { label: 'Errors', path: '/errors' },
   { label: 'API Keys', path: '/api-keys' },
+  { label: 'Config', path: '/config' },
   { label: 'Settings', path: '/settings' },
 ]
 
@@ -2505,6 +2506,104 @@ function ToolFormPage({ mode, canEdit }) {
   )
 }
 
+function ConfigList() {
+  const [state, setState] = useState('loading')
+  const [items, setItems] = useState([])
+
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setState('error')
+      return
+    }
+
+    const controller = new AbortController()
+
+    const load = async () => {
+      try {
+        setState('loading')
+        const response = await fetch('/admin/config', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error('Failed to load config items')
+        }
+        const payload = await response.json()
+        setItems(payload.items || [])
+        setState('ready')
+      } catch (error) {
+        setState('error')
+      }
+    }
+
+    void load()
+    return () => controller.abort()
+  }, [])
+
+  const helperText =
+    state === 'loading'
+      ? 'Loading configuration...'
+      : state === 'error'
+        ? 'Unable to load configuration.'
+        : `${items.length} config items.`
+
+  const formatValue = (value) => {
+    if (value === null || value === undefined) {
+      return '—'
+    }
+    if (typeof value === 'string') {
+      return value
+    }
+    return JSON.stringify(value, null, 2)
+  }
+
+  const formatValidation = (validation) => {
+    if (!validation || typeof validation !== 'object' || Object.keys(validation).length === 0) {
+      return '—'
+    }
+    return JSON.stringify(validation, null, 2)
+  }
+
+  return (
+    <div className="content-card">
+      <div className="card-header">
+        <div>
+          <h1>Config</h1>
+          <p>Review global configuration values and validation rules.</p>
+        </div>
+        <span className="helper-text">{helperText}</span>
+      </div>
+      <div className="config-table">
+        <div className="config-row config-head">
+          <span>Title</span>
+          <span>Value</span>
+          <span>Description</span>
+          <span>Validation</span>
+        </div>
+        {items.map((item) => (
+          <div className="config-row" key={item.key}>
+            <div>
+              <div className="config-title">{item.title}</div>
+              <div className="config-key">{item.key}</div>
+            </div>
+            <div className="config-cell">
+              <pre className="summary-content config-json">{formatValue(item.value)}</pre>
+            </div>
+            <div className="config-description">{item.description}</div>
+            <div className="config-cell">
+              <pre className="summary-content config-json">{formatValidation(item.validation)}</pre>
+            </div>
+          </div>
+        ))}
+        {state === 'ready' && items.length === 0 ? (
+          <div className="config-empty">No config items available yet.</div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function RoleRoute({ allowedRoles, role, children }) {
   if (!allowedRoles.includes(role)) {
     return <Navigate to="/" replace />
@@ -2720,6 +2819,14 @@ function AdminLayout({ role }) {
             path="/api-keys"
             element={
               <ApiKeysList canEdit={canEdit} />
+            }
+          />
+          <Route
+            path="/config"
+            element={
+              <RoleRoute allowedRoles={['Admin', 'Operator']} role={role}>
+                <ConfigList />
+              </RoleRoute>
             }
           />
           <Route
